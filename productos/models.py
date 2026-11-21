@@ -50,9 +50,8 @@ class Producto(models.Model):
         related_name="productos"
     )
 
-    categoria = models.ForeignKey(
+    categorias = models.ManyToManyField(
         Categoria,
-        on_delete=models.PROTECT,
         related_name="productos"
     )
 
