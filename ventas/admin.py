@@ -4,7 +4,7 @@ from .models import Venta, DetalleVenta, Pago
 
 @admin.register(Venta)
 class VentaAdmin(admin.ModelAdmin):
-    list_display = ("id", "fecha")
+    list_display = ("id", "fecha", "monto_total", "total_pagado")
     ordering = ("-fecha",)
 
 

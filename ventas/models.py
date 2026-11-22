@@ -6,6 +6,17 @@ from productos.models import Producto
 class Venta(models.Model):
     fecha = models.DateTimeField(auto_now_add=True)
 
+    @property
+    def monto_total(self):
+        return sum(
+            (detalle.precio_unitario * detalle.cantidad
+             for detalle in self.detalles.all()), 0
+        )
+
+    @property
+    def total_pagado(self):
+        return sum((pago.importe for pago in self.pagos.all()), 0)
+
     def __str__(self):
         return f"Venta N°{self.pk}"
 
