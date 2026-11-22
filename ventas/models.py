@@ -14,6 +14,10 @@ class Venta(models.Model):
         )
 
     @property
+    def monto_restante(self):
+        return self.monto_total - self.total_pagado
+
+    @property
     def total_pagado(self):
         return sum((pago.importe for pago in self.pagos.all()), 0)
 
