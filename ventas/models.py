@@ -1,4 +1,6 @@
 from django.db import models
+from django.db.models import Sum, F
+from decimal import Decimal
 from django.core.validators import MinValueValidator
 from productos.models import Producto
 
@@ -8,18 +10,18 @@ class Venta(models.Model):
 
     @property
     def monto_total(self):
-        return sum(
-            (detalle.precio_unitario * detalle.cantidad
-             for detalle in self.detalles.all()), 0
-        )
+        return self.detalles.aggregate(
+            total=Sum(F("precio_unitario") * F("cantidad"))
+        )["total"] or Decimal("0")
+
+    @property
+    def total_pagado(self):
+        return self.pagos.aggregate(total=Sum("importe"))["total"] or \
+            Decimal("0")
 
     @property
     def monto_restante(self):
         return self.monto_total - self.total_pagado
-
-    @property
-    def total_pagado(self):
-        return sum((pago.importe for pago in self.pagos.all()), 0)
 
     def __str__(self):
         return f"Venta N°{self.pk}"
