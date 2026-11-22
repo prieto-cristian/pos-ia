@@ -17,6 +17,17 @@ class DetalleVentaAdmin(admin.ModelAdmin):
     search_fields = ("producto__nombre",)
     ordering = ("-venta__fecha",)
 
+    def get_fields(self, request, obj=None):
+        if obj is None:
+            return ("venta", "producto", "cantidad")
+        return super().get_fields(request, obj)
+
+    def save_model(self, request, obj, form, change):
+        if not change:
+            obj.precio_unitario = obj.producto.precio_venta
+            obj.costo_unitario = obj.producto.costo
+        super().save_model(request, obj, form, change)
+
 
 @admin.register(Pago)
 class PagoAdmin(admin.ModelAdmin):
