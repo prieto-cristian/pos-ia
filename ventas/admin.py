@@ -1,5 +1,6 @@
 from django.contrib import admin
 from .models import Venta, DetalleVenta, Pago
+from .forms import PagoAdminForm
 # Register your models here.
 
 @admin.register(Venta)
@@ -31,6 +32,7 @@ class DetalleVentaAdmin(admin.ModelAdmin):
 
 @admin.register(Pago)
 class PagoAdmin(admin.ModelAdmin):
+    form = PagoAdminForm
     list_display = ("medio_pago", "venta__id", "importe")
     list_filter = ("medio_pago",)
     list_select_related = ("venta",)
