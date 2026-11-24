@@ -1,9 +1,11 @@
+{% load static %}
 <!doctype html>
 <html lang="es">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Punto de venta</title>
+    <script src="{% static 'ventas/js/pagos.js' %}" defer></script>
 </head>
 <body>
     <main>
@@ -119,16 +121,27 @@
             {% endif %}
         </section>
 
-        <form method="post" action="{% url 'registrar_venta' %}">
+        <form method="post" action="{% url 'registrar_venta' %}"
+              id="form-pago" data-total="{{ total }}">
             {% csrf_token %}
             <input type="hidden" name="items" value="{{ items }}">
 
-            <label for="medio_pago">Medio de pago</label>
-            <select id="medio_pago" name="medio_pago">
+            <fieldset>
+                <legend>Medios de pago</legend>
+
                 {% for valor, etiqueta in medios_pago %}
-                    <option value="{{ valor }}">{{ etiqueta }}</option>
+                    <div data-medio-pago="{{ valor }}">
+                        <input id="medio-{{ valor }}" type="checkbox"
+                               name="medio_pago" value="{{ valor }}">
+                        <label for="medio-{{ valor }}">{{ etiqueta }}</label>
+
+                        <label for="importe-{{ valor }}">Importe</label>
+                        <input id="importe-{{ valor }}" type="number"
+                               name="importe_{{ valor }}" step="0.01" min="0"
+                               inputmode="decimal" hidden>
+                    </div>
                 {% endfor %}
-            </select>
+            </fieldset>
 
             <button type="submit">Registrar venta</button>
         </form>

@@ -102,6 +102,25 @@ class _FilasCarritoParser(HTMLParser):
             self._producto_id = None
 
 
+class _CamposDePagoParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.medios = set()
+        self.importes = set()
+
+    def handle_starttag(self, tag, attrs):
+        if tag != "input":
+            return
+        attrs = dict(attrs)
+        if (
+            attrs.get("type") == "checkbox"
+            and attrs.get("name") == "medio_pago"
+        ):
+            self.medios.add(attrs.get("value"))
+        if attrs.get("name", "").startswith("importe_"):
+            self.importes.add(attrs["name"])
+
+
 def items_enviados(response):
     parser = _ItemsParser()
     parser.feed(response.content.decode())
@@ -310,6 +329,77 @@ class PuntoDeVentaTests(TestCase):
         self.assertEqual(pago.medio_pago, Pago.MedioPago.EFECTIVO)
         self.assertEqual(pago.importe, Decimal("5500.00"))
         self.assertEqual(venta.monto_total, Decimal("5500.00"))
+
+    def test_registrar_venta_con_varios_medios_guarda_un_pago_por_medio_con_su_importe(
+        self,
+    ):
+        items = [
+            {"producto_id": self.producto.pk, "cantidad": 2},
+            {"producto_id": self.otro_producto.pk, "cantidad": 1},
+        ]
+
+        response = self.client.post(
+            reverse("registrar_venta"),
+            {
+                "items": json.dumps(items),
+                "medio_pago": [
+                    Pago.MedioPago.EFECTIVO,
+                    Pago.MedioPago.TARJETA,
+                ],
+                "importe_EFECTIVO": "3000.00",
+                "importe_TARJETA": "2500.00",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Venta.objects.count(), 1)
+        venta = Venta.objects.get()
+        self.assertEqual(
+            {
+                pago.medio_pago: pago.importe
+                for pago in venta.pagos.all()
+            },
+            {
+                Pago.MedioPago.EFECTIVO: Decimal("3000.00"),
+                Pago.MedioPago.TARJETA: Decimal("2500.00"),
+            },
+        )
+        self.assertEqual(venta.total_pagado, Decimal("5500.00"))
+        self.assertEqual(venta.monto_restante, Decimal("0.00"))
+
+    def test_registrar_venta_con_importes_que_no_suman_el_total_avisa_y_no_registra_nada(
+        self,
+    ):
+        items = [
+            {"producto_id": self.producto.pk, "cantidad": 2},
+            {"producto_id": self.otro_producto.pk, "cantidad": 1},
+        ]
+
+        response = self.client.post(
+            reverse("registrar_venta"),
+            {
+                "items": json.dumps(items),
+                "medio_pago": [
+                    Pago.MedioPago.EFECTIVO,
+                    Pago.MedioPago.TARJETA,
+                ],
+                "importe_EFECTIVO": "3000.00",
+                "importe_TARJETA": "2000.00",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            "Los importes deben sumar exactamente el total de la venta",
+        )
+        self.assertEqual(Venta.objects.count(), 0)
+        self.assertEqual(DetalleVenta.objects.count(), 0)
+        self.assertEqual(Pago.objects.count(), 0)
+        self.producto.refresh_from_db()
+        self.otro_producto.refresh_from_db()
+        self.assertEqual(self.producto.stock, 10)
+        self.assertEqual(self.otro_producto.stock, 8)
 
     def test_registrar_venta_descuenta_el_stock_de_cada_producto(self):
         items = [
@@ -631,6 +721,27 @@ class CarritoEnPantallaTests(TestCase):
         self.assertContains(response, "Carrito vacío")
         self.assertNotContains(response, "<table")
         self.assertNotContains(response, "Total")
+
+    def test_pos_muestra_casillas_y_un_importe_por_medio_de_pago(self):
+        items = [{"producto_id": self.yerba.pk, "cantidad": 2}]
+
+        response = self.client.post(
+            reverse("buscar_productos"),
+            {"nombre": "", "items": json.dumps(items)},
+        )
+
+        parser = _CamposDePagoParser()
+        parser.feed(response.content.decode())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            parser.medios,
+            {medio.value for medio in Pago.MedioPago},
+        )
+        self.assertEqual(
+            parser.importes,
+            {f"importe_{medio.value}" for medio in Pago.MedioPago},
+        )
 
 
 class BusquedaDeProductosTests(TestCase):

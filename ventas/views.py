@@ -1,6 +1,6 @@
 import json
 import unicodedata
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
 from django.shortcuts import render
@@ -10,6 +10,10 @@ from django.views.generic import TemplateView
 from productos.models import Producto
 
 from .models import DetalleVenta, Pago, Venta
+
+
+class _ImportesNoCoinciden(Exception):
+    pass
 
 
 def _lineas_del_carrito(items):
@@ -153,29 +157,47 @@ class RegistrarVentaView(View):
             contexto["error"] = "Agregá al menos un producto."
             return render(request, "ventas/pos.html", contexto)
 
-        medio_pago = request.POST.get("medio_pago")
-        if not medio_pago:
+        medios_pago = request.POST.getlist("medio_pago")
+        if not medios_pago:
             contexto = _contexto_pos(items)
             contexto["error"] = "Elegí un medio de pago."
             return render(request, "ventas/pos.html", contexto)
 
-        with transaction.atomic():
-            venta = Venta.objects.create()
-            for linea in lineas:
-                producto = linea["producto"]
-                DetalleVenta.objects.create(
-                    venta=venta,
-                    producto=producto,
-                    cantidad=linea["cantidad"],
-                    precio_unitario=producto.precio_venta,
-                    costo_unitario=producto.costo,
-                )
-                producto.descontar_stock(linea["cantidad"])
-            Pago.objects.create(
-                venta=venta,
-                medio_pago=medio_pago,
-                importe=total,
+        try:
+            with transaction.atomic():
+                venta = Venta.objects.create()
+                for linea in lineas:
+                    producto = linea["producto"]
+                    DetalleVenta.objects.create(
+                        venta=venta,
+                        producto=producto,
+                        cantidad=linea["cantidad"],
+                        precio_unitario=producto.precio_venta,
+                        costo_unitario=producto.costo,
+                    )
+                    producto.descontar_stock(linea["cantidad"])
+                for medio_pago in medios_pago:
+                    valor = request.POST.get(f"importe_{medio_pago}")
+                    if valor is None:
+                        importe = total
+                    else:
+                        try:
+                            importe = Decimal(valor or "0")
+                        except InvalidOperation:
+                            importe = Decimal("0")
+                    Pago.objects.create(
+                        venta=venta,
+                        medio_pago=medio_pago,
+                        importe=importe,
+                    )
+                if venta.monto_restante != Decimal("0"):
+                    raise _ImportesNoCoinciden
+        except _ImportesNoCoinciden:
+            contexto = _contexto_pos(items)
+            contexto["error"] = (
+                "Los importes deben sumar exactamente el total de la venta."
             )
+            return render(request, "ventas/pos.html", contexto)
 
         contexto = _contexto_pos([])
         contexto["venta"] = venta
