@@ -110,6 +110,28 @@ class AgregarDesdeResultadosView(View):
         return render(request, "ventas/pos.html", contexto)
 
 
+class ActualizarCantidadView(View):
+    def post(self, request):
+        items = json.loads(request.POST.get("items") or "[]")
+        producto_id = int(request.POST["producto_id"])
+        cantidad = int(request.POST["cantidad"])
+        for item in items:
+            if item["producto_id"] == producto_id:
+                item["cantidad"] = cantidad
+                break
+        return render(request, "ventas/pos.html", _contexto_pos(items))
+
+
+class QuitarDelCarritoView(View):
+    def post(self, request):
+        items = json.loads(request.POST.get("items") or "[]")
+        producto_id = int(request.POST["producto_id"])
+        items = [
+            item for item in items if item["producto_id"] != producto_id
+        ]
+        return render(request, "ventas/pos.html", _contexto_pos(items))
+
+
 class BuscarProductosView(View):
     def post(self, request):
         items = json.loads(request.POST.get("items") or "[]")

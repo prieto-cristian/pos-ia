@@ -87,7 +87,25 @@
                             <tr data-producto-id="{{ linea.producto.pk }}"
                                 data-cantidad="{{ linea.cantidad }}">
                                 <td>{{ linea.producto.nombre }}</td>
-                                <td>{{ linea.cantidad }}</td>
+                                <td>
+                                    <form method="post"
+                                          action="{% url 'actualizar_cantidad' %}">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="items"
+                                               value="{{ items }}">
+                                        <input type="hidden" name="producto_id"
+                                               value="{{ linea.producto.pk }}">
+
+                                        <label for="cantidad-{{ linea.producto.pk }}">Cantidad</label>
+                                        <input id="cantidad-{{ linea.producto.pk }}"
+                                               type="number" name="cantidad"
+                                               value="{{ linea.cantidad }}">
+
+                                        <button type="submit">Actualizar</button>
+                                        <button type="submit"
+                                                formaction="{% url 'quitar_del_carrito' %}">Quitar</button>
+                                    </form>
+                                </td>
                                 <td>$ {{ linea.producto.precio_venta }}</td>
                                 <td>$ {{ linea.subtotal }}</td>
                             </tr>

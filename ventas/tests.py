@@ -29,6 +29,7 @@ class _FormulariosParser(HTMLParser):
         self.formularios = []
         self._actual = None
         self._en_boton = False
+        self._formaction_boton = None
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
@@ -37,6 +38,7 @@ class _FormulariosParser(HTMLParser):
                 "action": attrs.get("action"),
                 "campos": {},
                 "botones": [],
+                "formactions": {},
             }
             self.formularios.append(self._actual)
         elif tag == "input" and self._actual is not None:
@@ -45,14 +47,19 @@ class _FormulariosParser(HTMLParser):
                 self._actual["campos"][nombre] = attrs.get("value")
         elif tag == "button" and self._actual is not None:
             self._en_boton = True
+            self._formaction_boton = attrs.get("formaction")
 
     def handle_data(self, data):
         if self._en_boton and self._actual is not None and data.strip():
-            self._actual["botones"].append(data.strip())
+            texto = data.strip()
+            self._actual["botones"].append(texto)
+            if self._formaction_boton:
+                self._actual["formactions"][texto] = self._formaction_boton
 
     def handle_endtag(self, tag):
         if tag == "button":
             self._en_boton = False
+            self._formaction_boton = None
         elif tag == "form":
             self._actual = None
             self._en_boton = False
@@ -64,6 +71,7 @@ class _FilasCarritoParser(HTMLParser):
         self.filas = {}
         self._producto_id = None
         self._celda = None
+        self._en_formulario = False
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
@@ -72,13 +80,20 @@ class _FilasCarritoParser(HTMLParser):
             self.filas[self._producto_id] = []
         elif tag == "td" and self._producto_id is not None:
             self._celda = []
+        elif tag == "form":
+            self._en_formulario = True
+        elif tag == "input" and self._celda is not None:
+            if attrs.get("name") == "cantidad":
+                self._celda.append(attrs.get("value", ""))
 
     def handle_data(self, data):
-        if self._celda is not None:
+        if self._celda is not None and not self._en_formulario:
             self._celda.append(data)
 
     def handle_endtag(self, tag):
-        if tag == "td" and self._celda is not None:
+        if tag == "form":
+            self._en_formulario = False
+        elif tag == "td" and self._celda is not None:
             self.filas[self._producto_id].append(
                 " ".join("".join(self._celda).split())
             )
@@ -459,6 +474,155 @@ class CarritoEnPantallaTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Total: $ 10500,00")
+
+    def test_actualizar_cantidad_recalcula_el_importe_de_la_linea_y_el_total(
+        self,
+    ):
+        items = [
+            {"producto_id": self.yerba.pk, "cantidad": 2},
+            {"producto_id": self.cafe.pk, "cantidad": 1},
+        ]
+
+        response = self.client.post(
+            reverse("actualizar_cantidad"),
+            {
+                "items": json.dumps(items),
+                "producto_id": self.yerba.pk,
+                "cantidad": 3,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            items_enviados(response),
+            [
+                {"producto_id": self.yerba.pk, "cantidad": 3},
+                {"producto_id": self.cafe.pk, "cantidad": 1},
+            ],
+        )
+        self.assertContains(response, 'data-cantidad="3"')
+        self.assertContains(response, 'data-cantidad="1"')
+        self.assertContains(response, "$ 4500,00")
+        self.assertContains(response, "$ 2500,00")
+        self.assertContains(response, "Total: $ 7000,00")
+
+    def test_quitar_un_producto_elimina_su_linea_y_recalcula_el_total(self):
+        items = [
+            {"producto_id": self.yerba.pk, "cantidad": 2},
+            {"producto_id": self.cafe.pk, "cantidad": 1},
+        ]
+
+        response = self.client.post(
+            reverse("quitar_del_carrito"),
+            {
+                "items": json.dumps(items),
+                "producto_id": self.yerba.pk,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            items_enviados(response),
+            [{"producto_id": self.cafe.pk, "cantidad": 1}],
+        )
+        self.assertNotContains(
+            response,
+            f'data-producto-id="{self.yerba.pk}"',
+        )
+        self.assertContains(
+            response,
+            f'data-producto-id="{self.cafe.pk}"',
+        )
+        self.assertContains(response, "Total: $ 2500,00")
+
+    def test_quitar_el_unico_producto_muestra_el_carrito_vacio(self):
+        items = [{"producto_id": self.cafe.pk, "cantidad": 1}]
+
+        response = self.client.post(
+            reverse("quitar_del_carrito"),
+            {
+                "items": json.dumps(items),
+                "producto_id": self.cafe.pk,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(items_enviados(response), [])
+        self.assertContains(response, "Carrito vacío")
+        self.assertNotContains(
+            response,
+            f'data-producto-id="{self.cafe.pk}"',
+        )
+        self.assertNotContains(response, "Total")
+
+    def test_actualizar_cantidad_por_encima_del_stock_se_acepta(self):
+        self.yerba.stock = 1
+        self.yerba.save(update_fields=["stock"])
+        items = [{"producto_id": self.yerba.pk, "cantidad": 2}]
+
+        response = self.client.post(
+            reverse("actualizar_cantidad"),
+            {
+                "items": json.dumps(items),
+                "producto_id": self.yerba.pk,
+                "cantidad": 5,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            items_enviados(response),
+            [{"producto_id": self.yerba.pk, "cantidad": 5}],
+        )
+        self.assertContains(response, 'data-cantidad="5"')
+        self.assertContains(response, "Total: $ 7500,00")
+
+    def test_cada_linea_del_carrito_ofrece_cantidad_y_acciones_de_actualizar_y_quitar(
+        self,
+    ):
+        items = [
+            {"producto_id": self.yerba.pk, "cantidad": 2},
+            {"producto_id": self.cafe.pk, "cantidad": 3},
+        ]
+
+        response = self.client.post(
+            reverse("buscar_productos"),
+            {"nombre": "", "items": json.dumps(items)},
+        )
+
+        parser = _FormulariosParser()
+        parser.feed(response.content.decode())
+        formularios = [
+            formulario
+            for formulario in parser.formularios
+            if formulario["action"] == reverse("actualizar_cantidad")
+        ]
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(formularios), 2)
+        self.assertEqual(
+            {
+                formulario["campos"]["producto_id"]: formulario["campos"][
+                    "cantidad"
+                ]
+                for formulario in formularios
+            },
+            {
+                str(self.yerba.pk): "2",
+                str(self.cafe.pk): "3",
+            },
+        )
+        for formulario in formularios:
+            self.assertEqual(
+                json.loads(formulario["campos"]["items"]),
+                items,
+            )
+            self.assertIn("Actualizar", formulario["botones"])
+            self.assertIn("Quitar", formulario["botones"])
+            self.assertEqual(
+                formulario["formactions"]["Quitar"],
+                reverse("quitar_del_carrito"),
+            )
 
     def test_carrito_vacio_no_muestra_lineas_ni_total(self):
         response = self.client.get(reverse("pos"))
