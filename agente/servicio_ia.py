@@ -8,6 +8,7 @@ from .periodos import REGLAS_PERIODOS
 from .herramientas import (
     listar_productos_stock_bajo,
     obtener_productos_mas_vendidos,
+    resumir_ventas
 )
 
 
@@ -26,6 +27,10 @@ considera todo el historial de ventas disponible. Si sí especifica un
 período, limita la consulta a ese período. El ranking se basa en unidades
 vendidas, no en importe ni rentabilidad. No pidas fechas cuando no se
 indicó un período.
+
+Para consultas sobre ventas y pagos de un período, usa resumir_ventas.
+Diferencia importe vendido, importe cobrado y saldo pendiente.
+No presentes el importe vendido como si fuera lo cobrado.
 """
 
 
@@ -35,7 +40,7 @@ def responder(pregunta):
 
     cliente = genai.Client(api_key=settings.GEMINI_API_KEY)
     hoy = timezone.localdate()
-    
+
     instrucciones = f"""
     {INSTRUCCIONES}
 
@@ -50,6 +55,7 @@ def responder(pregunta):
             tools=[
                 listar_productos_stock_bajo,
                 obtener_productos_mas_vendidos,
+                resumir_ventas,
             ],
             thinking_config=types.ThinkingConfig(
                 thinking_level=types.ThinkingLevel.MINIMAL,
