@@ -3,6 +3,8 @@ from google import genai
 from google.genai import types
 from django.utils import timezone
 
+from .periodos import REGLAS_PERIODOS
+
 from .herramientas import (
     listar_productos_stock_bajo,
     obtener_productos_mas_vendidos,
@@ -33,14 +35,12 @@ def responder(pregunta):
 
     cliente = genai.Client(api_key=settings.GEMINI_API_KEY)
     hoy = timezone.localdate()
-    inicio_mes = hoy.replace(day=1)
-
+    
     instrucciones = f"""
     {INSTRUCCIONES}
 
-    La fecha local de hoy es {hoy.isoformat()}.
-    Para "este mes", usa desde {inicio_mes.isoformat()} hasta {hoy.isoformat()},
-    ambos inclusive.
+    Fecha local de referencia: {hoy.isoformat()}.
+    {REGLAS_PERIODOS}
     """
 
     chat = cliente.chats.create(
