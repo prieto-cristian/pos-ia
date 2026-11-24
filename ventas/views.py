@@ -46,6 +46,25 @@ def _normalizar(texto):
     return sin_tildes.casefold()
 
 
+def _agregar_al_carrito(items, producto):
+    for item in items:
+        if item["producto_id"] == producto.pk:
+            item["cantidad"] += 1
+            break
+    else:
+        items.append({"producto_id": producto.pk, "cantidad": 1})
+
+
+def _resultados_de_busqueda(termino):
+    if not termino:
+        return []
+    return [
+        producto
+        for producto in Producto.objects.filter(activo=True)
+        if termino in _normalizar(producto.nombre)
+    ]
+
+
 class PosView(TemplateView):
     template_name = "ventas/pos.html"
 
@@ -68,14 +87,27 @@ class AgregarAlCarritoView(View):
             contexto["error"] = "Producto no encontrado."
             return render(request, "ventas/pos.html", contexto)
 
-        for item in items:
-            if item["producto_id"] == producto.pk:
-                item["cantidad"] += 1
-                break
-        else:
-            items.append({"producto_id": producto.pk, "cantidad": 1})
+        _agregar_al_carrito(items, producto)
 
         return render(request, "ventas/pos.html", _contexto_pos(items))
+
+
+class AgregarDesdeResultadosView(View):
+    def post(self, request):
+        items = json.loads(request.POST.get("items") or "[]")
+        producto = Producto.objects.get(
+            pk=request.POST["producto_id"],
+            activo=True,
+        )
+        _agregar_al_carrito(items, producto)
+
+        termino = _normalizar(request.POST.get("nombre", "")).strip()
+        contexto = _contexto_pos(items)
+        resultados = _resultados_de_busqueda(termino)
+        contexto["resultados"] = resultados
+        contexto["sin_resultados"] = bool(termino) and not resultados
+        contexto["nombre"] = termino
+        return render(request, "ventas/pos.html", contexto)
 
 
 class BuscarProductosView(View):
@@ -83,13 +115,8 @@ class BuscarProductosView(View):
         items = json.loads(request.POST.get("items") or "[]")
         termino = _normalizar(request.POST.get("nombre", "")).strip()
         contexto = _contexto_pos(items)
-        resultados = []
-        if termino:
-            resultados = [
-                producto
-                for producto in Producto.objects.filter(activo=True)
-                if termino in _normalizar(producto.nombre)
-            ]
+        contexto["nombre"] = termino
+        resultados = _resultados_de_busqueda(termino)
         contexto["resultados"] = resultados
         contexto["sin_resultados"] = bool(termino) and not resultados
         return render(request, "ventas/pos.html", contexto)

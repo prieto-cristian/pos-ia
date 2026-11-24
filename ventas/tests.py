@@ -23,10 +23,55 @@ class _ItemsParser(HTMLParser):
             self.value = attrs.get("value")
 
 
+class _FormulariosParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.formularios = []
+        self._actual = None
+        self._en_boton = False
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag == "form":
+            self._actual = {
+                "action": attrs.get("action"),
+                "campos": {},
+                "botones": [],
+            }
+            self.formularios.append(self._actual)
+        elif tag == "input" and self._actual is not None:
+            nombre = attrs.get("name")
+            if nombre:
+                self._actual["campos"][nombre] = attrs.get("value")
+        elif tag == "button" and self._actual is not None:
+            self._en_boton = True
+
+    def handle_data(self, data):
+        if self._en_boton and self._actual is not None and data.strip():
+            self._actual["botones"].append(data.strip())
+
+    def handle_endtag(self, tag):
+        if tag == "button":
+            self._en_boton = False
+        elif tag == "form":
+            self._actual = None
+            self._en_boton = False
+
+
 def items_enviados(response):
     parser = _ItemsParser()
     parser.feed(response.content.decode())
     return json.loads(parser.value)
+
+
+def formularios_de_alta_desde_resultados(response):
+    parser = _FormulariosParser()
+    parser.feed(response.content.decode())
+    return [
+        formulario
+        for formulario in parser.formularios
+        if formulario["action"] == reverse("agregar_desde_resultados")
+    ]
 
 
 class PuntoDeVentaTests(TestCase):
@@ -397,6 +442,29 @@ class BusquedaDeProductosTests(TestCase):
         self.assertContains(response, 'data-cantidad="2"')
         self.assertRegex(response.content.decode(), r"Total: \$ 3000[.,]00")
 
+    def test_resultados_muestran_un_boton_agregar_por_producto(self):
+        items = [{"producto_id": self.cafe.pk, "cantidad": 2}]
+
+        response = self.client.post(
+            reverse("buscar_productos"),
+            {"nombre": "a", "items": json.dumps(items)},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        formularios = formularios_de_alta_desde_resultados(response)
+        self.assertEqual(len(formularios), 2)
+        self.assertEqual(
+            {formulario["campos"]["producto_id"] for formulario in formularios},
+            {str(self.yerba.pk), str(self.cafe.pk)},
+        )
+        for formulario in formularios:
+            self.assertEqual(
+                json.loads(formulario["campos"]["items"]),
+                items,
+            )
+            self.assertEqual(formulario["campos"]["nombre"], "a")
+            self.assertIn("Agregar", formulario["botones"])
+
     def test_busqueda_sin_resultados_avisa_y_conserva_el_carrito(self):
         items = [{"producto_id": self.yerba.pk, "cantidad": 1}]
 
@@ -423,6 +491,125 @@ class BusquedaDeProductosTests(TestCase):
             self.assertNotContains(response, "Resultados")
             self.assertNotContains(response, self.yerba.nombre)
             self.assertNotContains(response, self.cafe.nombre)
+
+
+class AgregarDesdeResultadosTests(TestCase):
+    def setUp(self):
+        proveedor = Proveedor.objects.create(
+            razon_social="Distribuidora SA",
+            cuit="30-12345678-9",
+        )
+        self.yerba = Producto.objects.create(
+            nombre="Yerba mate",
+            stock=10,
+            precio_venta=Decimal("1500.00"),
+            costo=Decimal("1000.00"),
+            codigo_barras="7791234567890",
+            proveedor=proveedor,
+        )
+        self.cafe = Producto.objects.create(
+            nombre="Café molido",
+            stock=8,
+            precio_venta=Decimal("2500.00"),
+            costo=Decimal("1800.00"),
+            codigo_barras="7791234567891",
+            proveedor=proveedor,
+        )
+
+    def test_agregar_desde_resultados_agrega_el_producto_con_cantidad_uno_y_actualiza_el_total(
+        self,
+    ):
+        response = self.client.post(
+            reverse("agregar_desde_resultados"),
+            {
+                "producto_id": self.yerba.pk,
+                "items": "[]",
+                "nombre": "yer",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            items_enviados(response),
+            [{"producto_id": self.yerba.pk, "cantidad": 1}],
+        )
+        self.assertContains(response, f'data-producto-id="{self.yerba.pk}"')
+        self.assertContains(response, 'data-cantidad="1"')
+        self.assertRegex(response.content.decode(), r"Total: \$ 1500[.,]00")
+
+    def test_agregar_desde_resultados_suma_una_unidad_sin_duplicar_la_linea(
+        self,
+    ):
+        primera = self.client.post(
+            reverse("agregar_desde_resultados"),
+            {
+                "producto_id": self.yerba.pk,
+                "items": "[]",
+                "nombre": "yer",
+            },
+        )
+        items = items_enviados(primera)
+
+        response = self.client.post(
+            reverse("agregar_desde_resultados"),
+            {
+                "producto_id": self.yerba.pk,
+                "items": json.dumps(items),
+                "nombre": "yer",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            items_enviados(response),
+            [{"producto_id": self.yerba.pk, "cantidad": 2}],
+        )
+        self.assertContains(response, 'data-cantidad="2"')
+        self.assertEqual(
+            response.content.decode().count(
+                f'data-producto-id="{self.yerba.pk}"'
+            ),
+            1,
+        )
+        self.assertRegex(response.content.decode(), r"Total: \$ 3000[.,]00")
+
+    def test_agregar_desde_resultados_conserva_los_resultados_y_el_resto_del_carrito(
+        self,
+    ):
+        items = [{"producto_id": self.cafe.pk, "cantidad": 2}]
+
+        response = self.client.post(
+            reverse("agregar_desde_resultados"),
+            {
+                "producto_id": self.yerba.pk,
+                "items": json.dumps(items),
+                "nombre": "yer",
+            },
+        )
+
+        items_esperados = [
+            {"producto_id": self.cafe.pk, "cantidad": 2},
+            {"producto_id": self.yerba.pk, "cantidad": 1},
+        ]
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(items_enviados(response), items_esperados)
+        self.assertContains(response, f'data-producto-id="{self.cafe.pk}"')
+        self.assertContains(response, 'data-cantidad="2"')
+        self.assertContains(response, f'data-producto-id="{self.yerba.pk}"')
+        self.assertContains(response, 'data-cantidad="1"')
+        self.assertRegex(response.content.decode(), r"Total: \$ 6500[.,]00")
+
+        formularios = formularios_de_alta_desde_resultados(response)
+        self.assertEqual(len(formularios), 1)
+        self.assertEqual(
+            formularios[0]["campos"]["producto_id"],
+            str(self.yerba.pk),
+        )
+        self.assertEqual(formularios[0]["campos"]["nombre"], "yer")
+        self.assertEqual(
+            json.loads(formularios[0]["campos"]["items"]),
+            items_esperados,
+        )
 
 
 class DetalleVentaAdminTests(TestCase):

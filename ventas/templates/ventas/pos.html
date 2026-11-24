@@ -46,6 +46,19 @@
                     {% for producto in resultados %}
                         <li>
                             {{ producto.nombre }} — $ {{ producto.precio_venta }}
+
+                            <form method="post"
+                                  action="{% url 'agregar_desde_resultados' %}">
+                                {% csrf_token %}
+                                <input type="hidden" name="producto_id"
+                                       value="{{ producto.pk }}">
+                                <input type="hidden" name="items"
+                                       value="{{ items }}">
+                                <input type="hidden" name="nombre"
+                                       value="{{ nombre }}">
+
+                                <button type="submit">Agregar</button>
+                            </form>
                         </li>
                     {% endfor %}
                 </ul>

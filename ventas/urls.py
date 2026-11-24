@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import (
     AgregarAlCarritoView,
+    AgregarDesdeResultadosView,
     BuscarProductosView,
     PosView,
     RegistrarVentaView,
@@ -19,6 +20,11 @@ urlpatterns = [
         "pos/agregar/",
         AgregarAlCarritoView.as_view(),
         name="agregar_al_carrito",
+    ),
+    path(
+        "pos/agregar-desde-resultados/",
+        AgregarDesdeResultadosView.as_view(),
+        name="agregar_desde_resultados",
     ),
     path(
         "pos/registrar/",
