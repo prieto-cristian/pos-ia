@@ -78,6 +78,8 @@
                         <tr>
                             <th>Producto</th>
                             <th>Cantidad</th>
+                            <th>Precio unitario</th>
+                            <th>Importe</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -86,6 +88,8 @@
                                 data-cantidad="{{ linea.cantidad }}">
                                 <td>{{ linea.producto.nombre }}</td>
                                 <td>{{ linea.cantidad }}</td>
+                                <td>$ {{ linea.producto.precio_venta }}</td>
+                                <td>$ {{ linea.subtotal }}</td>
                             </tr>
                         {% endfor %}
                     </tbody>

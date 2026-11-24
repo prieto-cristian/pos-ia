@@ -58,10 +58,45 @@ class _FormulariosParser(HTMLParser):
             self._en_boton = False
 
 
+class _FilasCarritoParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.filas = {}
+        self._producto_id = None
+        self._celda = None
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag == "tr" and attrs.get("data-producto-id"):
+            self._producto_id = attrs["data-producto-id"]
+            self.filas[self._producto_id] = []
+        elif tag == "td" and self._producto_id is not None:
+            self._celda = []
+
+    def handle_data(self, data):
+        if self._celda is not None:
+            self._celda.append(data)
+
+    def handle_endtag(self, tag):
+        if tag == "td" and self._celda is not None:
+            self.filas[self._producto_id].append(
+                " ".join("".join(self._celda).split())
+            )
+            self._celda = None
+        elif tag == "tr" and self._producto_id is not None:
+            self._producto_id = None
+
+
 def items_enviados(response):
     parser = _ItemsParser()
     parser.feed(response.content.decode())
     return json.loads(parser.value)
+
+
+def filas_del_carrito(response):
+    parser = _FilasCarritoParser()
+    parser.feed(response.content.decode())
+    return parser.filas
 
 
 def formularios_de_alta_desde_resultados(response):
@@ -350,6 +385,88 @@ class PuntoDeVentaTests(TestCase):
         self.assertContains(response, "Elegí un medio de pago")
         self.assertEqual(Venta.objects.count(), 0)
         self.assertEqual(Pago.objects.count(), 0)
+
+
+class CarritoEnPantallaTests(TestCase):
+    def setUp(self):
+        proveedor = Proveedor.objects.create(
+            razon_social="Distribuidora SA",
+            cuit="30-12345678-9",
+        )
+        self.yerba = Producto.objects.create(
+            nombre="Yerba mate",
+            stock=10,
+            precio_venta=Decimal("1500.00"),
+            costo=Decimal("1000.00"),
+            codigo_barras="7791234567890",
+            proveedor=proveedor,
+        )
+        self.cafe = Producto.objects.create(
+            nombre="Café molido",
+            stock=8,
+            precio_venta=Decimal("2500.00"),
+            costo=Decimal("1800.00"),
+            codigo_barras="7791234567891",
+            proveedor=proveedor,
+        )
+
+    def test_carrito_muestra_nombre_cantidad_precio_unitario_e_importe_de_cada_linea(
+        self,
+    ):
+        items = [
+            {"producto_id": self.yerba.pk, "cantidad": 2},
+            {"producto_id": self.cafe.pk, "cantidad": 3},
+        ]
+
+        response = self.client.post(
+            reverse("buscar_productos"),
+            {"nombre": "", "items": json.dumps(items)},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Precio unitario")
+        self.assertContains(response, "Importe")
+        self.assertEqual(
+            filas_del_carrito(response),
+            {
+                str(self.yerba.pk): [
+                    "Yerba mate",
+                    "2",
+                    "$ 1500,00",
+                    "$ 3000,00",
+                ],
+                str(self.cafe.pk): [
+                    "Café molido",
+                    "3",
+                    "$ 2500,00",
+                    "$ 7500,00",
+                ],
+            },
+        )
+
+    def test_total_del_carrito_es_la_suma_de_los_importes_de_las_lineas(
+        self,
+    ):
+        items = [
+            {"producto_id": self.yerba.pk, "cantidad": 2},
+            {"producto_id": self.cafe.pk, "cantidad": 3},
+        ]
+
+        response = self.client.post(
+            reverse("buscar_productos"),
+            {"nombre": "", "items": json.dumps(items)},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Total: $ 10500,00")
+
+    def test_carrito_vacio_no_muestra_lineas_ni_total(self):
+        response = self.client.get(reverse("pos"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Carrito vacío")
+        self.assertNotContains(response, "<table")
+        self.assertNotContains(response, "Total")
 
 
 class BusquedaDeProductosTests(TestCase):
