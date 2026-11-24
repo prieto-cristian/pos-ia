@@ -96,8 +96,11 @@ def productos_mas_vendidos(desde=None, hasta=None, limite=10):
     }
 
 def resumen_ventas(desde=None, hasta=None):
-    ventas = _ventas_en_periodo(desde, hasta)
-    detalles = DetalleVenta.objects.filter(venta__in=ventas)
+    ventas_qs, fecha_desde, fecha_hasta = _ventas_en_periodo(
+        desde,
+        hasta,
+    )
+    detalles = DetalleVenta.objects.filter(venta__in=ventas_qs)
 
     totales_detalles = detalles.aggregate(
         unidades=Sum("cantidad"),
@@ -109,7 +112,7 @@ def resumen_ventas(desde=None, hasta=None):
 
     importe_cobrado = (
         Pago.objects
-        .filter(venta__in=ventas)
+        .filter(venta__in=ventas_qs)
         .aggregate(total=Sum("importe"))["total"]
         or Decimal("0.00")
     )
@@ -117,14 +120,14 @@ def resumen_ventas(desde=None, hasta=None):
     saldo_pendiente = importe_vendido - importe_cobrado
 
     return {
-        "desde": desde,
-        "hasta": hasta,
+        "desde": fecha_desde.isoformat() if fecha_desde else None,
+        "hasta": fecha_hasta.isoformat() if fecha_hasta else None,
         "periodo": (
             "historial_completo"
-            if desde is None
+            if fecha_desde is None
             else "rango_especificado"
         ),
-        "cantidad_ventas": ventas.count(),
+        "cantidad_ventas": ventas_qs.count(),
         "unidades_vendidas": unidades_vendidas,
         "importe_vendido": format(importe_vendido, ".2f"),
         "importe_cobrado": format(importe_cobrado, ".2f"),
