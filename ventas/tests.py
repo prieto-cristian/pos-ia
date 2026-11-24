@@ -307,6 +307,124 @@ class PuntoDeVentaTests(TestCase):
         self.assertEqual(Pago.objects.count(), 0)
 
 
+class BusquedaDeProductosTests(TestCase):
+    def setUp(self):
+        proveedor = Proveedor.objects.create(
+            razon_social="Distribuidora SA",
+            cuit="30-12345678-9",
+        )
+        self.yerba = Producto.objects.create(
+            nombre="Yerba mate",
+            stock=10,
+            precio_venta=Decimal("1500.00"),
+            costo=Decimal("1000.00"),
+            codigo_barras="7791234567890",
+            proveedor=proveedor,
+        )
+        self.cafe = Producto.objects.create(
+            nombre="Café molido",
+            stock=8,
+            precio_venta=Decimal("2500.00"),
+            costo=Decimal("1800.00"),
+            codigo_barras="7791234567891",
+            proveedor=proveedor,
+        )
+
+    def test_busqueda_por_parte_del_nombre_muestra_coincidencias_con_precio(
+        self,
+    ):
+        response = self.client.post(
+            reverse("buscar_productos"),
+            {"nombre": "yer", "items": "[]"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'name="nombre"')
+        self.assertContains(response, self.yerba.nombre)
+        self.assertRegex(response.content.decode(), r"1500[.,]00")
+        self.assertNotContains(response, self.cafe.nombre)
+
+    def test_busqueda_ignora_mayusculas_y_tildes(self):
+        response = self.client.post(
+            reverse("buscar_productos"),
+            {"nombre": "CAFE", "items": "[]"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.cafe.nombre)
+        self.assertNotContains(response, self.yerba.nombre)
+
+        response = self.client.post(
+            reverse("buscar_productos"),
+            {"nombre": "YÉRBA", "items": "[]"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.yerba.nombre)
+        self.assertNotContains(response, self.cafe.nombre)
+
+    def test_busqueda_no_muestra_productos_inactivos(self):
+        inactivo = Producto.objects.create(
+            nombre="Yerba mate descartada",
+            stock=5,
+            precio_venta=Decimal("100.00"),
+            costo=Decimal("50.00"),
+            codigo_barras="7790000000002",
+            proveedor=self.yerba.proveedor,
+            activo=False,
+        )
+
+        response = self.client.post(
+            reverse("buscar_productos"),
+            {"nombre": "yerba", "items": "[]"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.yerba.nombre)
+        self.assertNotContains(response, inactivo.nombre)
+
+    def test_busqueda_conserva_el_carrito_y_el_total(self):
+        items = [{"producto_id": self.yerba.pk, "cantidad": 2}]
+
+        response = self.client.post(
+            reverse("buscar_productos"),
+            {"nombre": "cafe", "items": json.dumps(items)},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(items_enviados(response), items)
+        self.assertContains(response, f'data-producto-id="{self.yerba.pk}"')
+        self.assertContains(response, 'data-cantidad="2"')
+        self.assertRegex(response.content.decode(), r"Total: \$ 3000[.,]00")
+
+    def test_busqueda_sin_resultados_avisa_y_conserva_el_carrito(self):
+        items = [{"producto_id": self.yerba.pk, "cantidad": 1}]
+
+        response = self.client.post(
+            reverse("buscar_productos"),
+            {"nombre": "zzz", "items": json.dumps(items)},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "No se encontraron productos")
+        self.assertEqual(items_enviados(response), items)
+        self.assertContains(response, f'data-producto-id="{self.yerba.pk}"')
+        self.assertRegex(response.content.decode(), r"Total: \$ 1500[.,]00")
+
+    def test_busqueda_vacia_no_muestra_aviso_ni_resultados(self):
+        for termino in ("", "   "):
+            response = self.client.post(
+                reverse("buscar_productos"),
+                {"nombre": termino, "items": "[]"},
+            )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertNotContains(response, "No se encontraron productos")
+            self.assertNotContains(response, "Resultados")
+            self.assertNotContains(response, self.yerba.nombre)
+            self.assertNotContains(response, self.cafe.nombre)
+
+
 class DetalleVentaAdminTests(TestCase):
     def setUp(self):
         proveedor = Proveedor.objects.create(

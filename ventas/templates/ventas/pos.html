@@ -28,6 +28,34 @@
             <button type="submit">Agregar</button>
         </form>
 
+        <form method="post" action="{% url 'buscar_productos' %}">
+            {% csrf_token %}
+            <label for="nombre">Buscar por nombre</label>
+            <input id="nombre" type="text" name="nombre" autocomplete="off">
+
+            <input type="hidden" name="items" value="{{ items }}">
+
+            <button type="submit">Buscar</button>
+        </form>
+
+        {% if resultados %}
+            <section aria-labelledby="resultados-titulo">
+                <h2 id="resultados-titulo">Resultados</h2>
+
+                <ul>
+                    {% for producto in resultados %}
+                        <li>
+                            {{ producto.nombre }} — $ {{ producto.precio_venta }}
+                        </li>
+                    {% endfor %}
+                </ul>
+            </section>
+        {% endif %}
+
+        {% if sin_resultados %}
+            <p role="alert">No se encontraron productos.</p>
+        {% endif %}
+
         <section aria-labelledby="carrito-titulo">
             <h2 id="carrito-titulo">Carrito</h2>
 

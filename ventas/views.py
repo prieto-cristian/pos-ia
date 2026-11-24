@@ -1,4 +1,5 @@
 import json
+import unicodedata
 from decimal import Decimal
 
 from django.db import transaction
@@ -36,6 +37,15 @@ def _contexto_pos(items):
     }
 
 
+def _normalizar(texto):
+    sin_tildes = "".join(
+        caracter
+        for caracter in unicodedata.normalize("NFKD", texto)
+        if not unicodedata.combining(caracter)
+    )
+    return sin_tildes.casefold()
+
+
 class PosView(TemplateView):
     template_name = "ventas/pos.html"
 
@@ -66,6 +76,23 @@ class AgregarAlCarritoView(View):
             items.append({"producto_id": producto.pk, "cantidad": 1})
 
         return render(request, "ventas/pos.html", _contexto_pos(items))
+
+
+class BuscarProductosView(View):
+    def post(self, request):
+        items = json.loads(request.POST.get("items") or "[]")
+        termino = _normalizar(request.POST.get("nombre", "")).strip()
+        contexto = _contexto_pos(items)
+        resultados = []
+        if termino:
+            resultados = [
+                producto
+                for producto in Producto.objects.filter(activo=True)
+                if termino in _normalizar(producto.nombre)
+            ]
+        contexto["resultados"] = resultados
+        contexto["sin_resultados"] = bool(termino) and not resultados
+        return render(request, "ventas/pos.html", contexto)
 
 
 class RegistrarVentaView(View):

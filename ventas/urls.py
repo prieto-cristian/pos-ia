@@ -1,10 +1,20 @@
 from django.urls import path
 
-from .views import AgregarAlCarritoView, PosView, RegistrarVentaView
+from .views import (
+    AgregarAlCarritoView,
+    BuscarProductosView,
+    PosView,
+    RegistrarVentaView,
+)
 
 
 urlpatterns = [
     path("pos/", PosView.as_view(), name="pos"),
+    path(
+        "pos/buscar/",
+        BuscarProductosView.as_view(),
+        name="buscar_productos",
+    ),
     path(
         "pos/agregar/",
         AgregarAlCarritoView.as_view(),
