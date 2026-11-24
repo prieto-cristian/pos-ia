@@ -150,3 +150,80 @@ def resolver_periodo(
         return fecha_desde, fecha_hasta
 
     raise ValueError(f"Tipo de período no reconocido: {tipo_periodo}")
+
+def _sumar_meses(fecha, cantidad):
+    indice_mes = fecha.year * 12 + fecha.month - 1 + cantidad
+    anio, mes_cero = divmod(indice_mes, 12)
+    mes = mes_cero + 1
+    dia = min(fecha.day, calendar.monthrange(anio, mes)[1])
+    return date(anio, mes, dia)
+
+
+def resolver_periodos_comparables(
+    tipo_periodo,
+    anio=0,
+    trimestre=0,
+    dias=0,
+    desde="",
+    hasta="",
+):
+    hoy = timezone.localdate()
+
+    actual_desde, actual_hasta = resolver_periodo(
+        tipo_periodo=tipo_periodo,
+        anio=anio,
+        trimestre=trimestre,
+        dias=dias,
+        desde=desde,
+        hasta=hasta,
+    )
+
+    if actual_desde is None or actual_hasta is None:
+        raise ValueError(
+            "Para comparar ventas se necesita un período, "
+            "no el historial completo."
+        )
+
+    if tipo_periodo == "mes_actual":
+        comparacion_desde = _sumar_meses(actual_desde, -1).replace(day=1)
+        comparacion_hasta = _sumar_meses(actual_hasta, -1)
+
+    elif tipo_periodo == "mes_anterior":
+        comparacion_hasta = _sumar_meses(actual_hasta, -1)
+        comparacion_desde = comparacion_hasta.replace(day=1)
+
+    elif tipo_periodo == "anio_actual":
+        comparacion_desde = date(actual_desde.year - 1, 1, 1)
+        comparacion_hasta = _sumar_meses(actual_hasta, -12)
+
+    elif tipo_periodo == "anio_anterior":
+        comparacion_desde = date(actual_desde.year - 1, 1, 1)
+        comparacion_hasta = date(actual_hasta.year - 1, 12, 31)
+
+    elif tipo_periodo in ("semana_actual", "semana_anterior"):
+        comparacion_desde = actual_desde - timedelta(days=7)
+        comparacion_hasta = actual_hasta - timedelta(days=7)
+
+    elif tipo_periodo == "trimestre_actual":
+        comparacion_desde = _sumar_meses(actual_desde, -3)
+        comparacion_hasta = _sumar_meses(actual_hasta, -3)
+
+    elif tipo_periodo in ("trimestre_anterior", "trimestre_especifico"):
+        comparacion_hasta = _sumar_meses(actual_desde, -1)
+        comparacion_hasta = comparacion_hasta.replace(day=1) - timedelta(days=1)
+        comparacion_desde = comparacion_hasta.replace(
+            month=((comparacion_hasta.month - 1) // 3) * 3 + 1,
+            day=1,
+        )
+
+    else:
+        duracion = (actual_hasta - actual_desde).days + 1
+        comparacion_hasta = actual_desde - timedelta(days=1)
+        comparacion_desde = comparacion_hasta - timedelta(days=duracion - 1)
+
+    return (
+        actual_desde,
+        actual_hasta,
+        comparacion_desde,
+        comparacion_hasta,
+    )

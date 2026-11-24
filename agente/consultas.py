@@ -58,6 +58,121 @@ def _ventas_en_periodo(desde=None, hasta=None):
 
     return ventas, fecha_desde, fecha_hasta
 
+def _unidades_por_producto(ventas_qs):
+    detalles = DetalleVenta.objects.filter(venta__in=ventas_qs)
+
+    filas = (
+        detalles
+        .values("producto_id", "producto__nombre")
+        .annotate(unidades=Sum("cantidad"))
+    )
+
+    return {
+        fila["producto_id"]: {
+            "nombre": fila["producto__nombre"],
+            "unidades": fila["unidades"],
+        }
+        for fila in filas
+    }
+
+
+def calcular_comparacion_ventas(
+    desde_actual,
+    hasta_actual,
+    desde_comparacion,
+    hasta_comparacion,
+    limite=5,
+):
+    limite = max(1, min(int(limite), 20))
+
+    ventas_actuales, _, _ = _ventas_en_periodo(
+        desde_actual,
+        hasta_actual,
+    )
+    ventas_comparacion, _, _ = _ventas_en_periodo(
+        desde_comparacion,
+        hasta_comparacion,
+    )
+
+    actuales = _unidades_por_producto(ventas_actuales)
+    anteriores = _unidades_por_producto(ventas_comparacion)
+
+    total_unidades_actuales = sum(
+        producto["unidades"] for producto in actuales.values()
+    )
+    total_unidades_anteriores = sum(
+        producto["unidades"] for producto in anteriores.values()
+    )
+
+    diferencia_total = total_unidades_actuales - total_unidades_anteriores
+
+    variacion_total_porcentual = None
+    if total_unidades_anteriores:
+        variacion_total_porcentual = format(
+            Decimal(diferencia_total) * Decimal("100")
+            / Decimal(total_unidades_anteriores),
+            ".1f",
+        )
+
+    productos = []
+
+    for producto_id in actuales.keys() | anteriores.keys():
+        actual = actuales.get(producto_id)
+        anterior = anteriores.get(producto_id)
+        producto = actual or anterior
+
+        unidades_actuales = actual["unidades"] if actual else 0
+        unidades_anteriores = anterior["unidades"] if anterior else 0
+        diferencia = unidades_actuales - unidades_anteriores
+
+        porcentaje = None
+        if unidades_anteriores:
+            porcentaje = format(
+                Decimal(diferencia) * Decimal("100")
+                / Decimal(unidades_anteriores),
+                ".1f",
+            )
+
+        productos.append({
+            "producto_id": producto_id,
+            "nombre": producto["nombre"],
+            "unidades_actuales": unidades_actuales,
+            "unidades_periodo_anterior": unidades_anteriores,
+            "diferencia_unidades": diferencia,
+            "variacion_porcentual": porcentaje,
+            "sin_base_anterior": unidades_anteriores == 0,
+        })
+
+    aumentos = sorted(
+        (p for p in productos if p["diferencia_unidades"] > 0),
+        key=lambda p: p["diferencia_unidades"],
+        reverse=True,
+    )[:limite]
+
+    caidas = sorted(
+        (p for p in productos if p["diferencia_unidades"] < 0),
+        key=lambda p: p["diferencia_unidades"],
+    )[:limite]
+
+    return {
+        "periodo_actual": {
+            "desde": desde_actual,
+            "hasta": hasta_actual,
+        },
+        "periodo_comparacion": {
+            "desde": desde_comparacion,
+            "hasta": hasta_comparacion,
+        },
+        "mayores_aumentos": aumentos,
+        "mayores_caidas": caidas,
+        "totales": {
+            "unidades_actuales": total_unidades_actuales,
+            "unidades_periodo_anterior": total_unidades_anteriores,
+            "diferencia_unidades": diferencia_total,
+            "variacion_porcentual": variacion_total_porcentual,
+        },
+    }
+
 def productos_con_stock_bajo(limite=10):
     """Devuelve productos activos con stock igual o menor al mínimo."""
     limite = max(1, min(int(limite), 50))

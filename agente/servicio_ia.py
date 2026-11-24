@@ -3,12 +3,17 @@ from google import genai
 from google.genai import types
 from django.utils import timezone
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 from .periodos import REGLAS_PERIODOS
 
 from .herramientas import (
     listar_productos_stock_bajo,
     obtener_productos_mas_vendidos,
-    resumir_ventas
+    resumir_ventas,
+    comparar_ventas_por_producto,
 )
 
 
@@ -31,6 +36,19 @@ indicó un período.
 Para consultas sobre ventas y pagos de un período, usa resumir_ventas.
 Diferencia importe vendido, importe cobrado y saldo pendiente.
 No presentes el importe vendido como si fuera lo cobrado.
+
+Para comparar la evolución de las ventas, usá la herramienta de comparación.
+Si el usuario no especifica un período, compará el mes actual con el período
+equivalente anterior. No uses el historial completo para comparar tendencias,
+porque los períodos deben tener la misma duración.
+
+La herramienta comparar_ventas_por_producto también sirve para preguntas
+generales sobre cómo variaron las ventas, como “¿Cómo variaron las ventas
+de este mes?”. En ese caso, resumí la variación total de unidades vendidas
+entre el período consultado y el período comparable anterior, y usá los
+aumentos y las caídas por producto para explicar qué contribuyó al cambio.
+Aclarale al usuario que la comparación se refiere a unidades, no a ingresos
+ni a rentabilidad.
 """
 
 
@@ -56,6 +74,7 @@ def responder(pregunta):
                 listar_productos_stock_bajo,
                 obtener_productos_mas_vendidos,
                 resumir_ventas,
+                comparar_ventas_por_producto,
             ],
             thinking_config=types.ThinkingConfig(
                 thinking_level=types.ThinkingLevel.MINIMAL,
@@ -68,4 +87,10 @@ def responder(pregunta):
 
 
     respuesta = chat.send_message(pregunta)
+    if respuesta.function_calls:
+        logger.error(
+            "Gemini devolvió llamadas a herramientas sin respuesta final: %s",
+            respuesta.function_calls,
+        )
+        return "La consulta quedó incompleta al ejecutar una herramienta."
     return respuesta.text or "No pude generar una respuesta."
