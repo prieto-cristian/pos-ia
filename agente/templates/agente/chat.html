@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Asistente de PosIA</title>
+</head>
+<body>
+    <main>
+        <h1>Asistente comercial</h1>
+
+        <form method="post">
+            {% csrf_token %}
+
+            <label for="pregunta">¿Qué querés consultar?</label>
+            <textarea
+                id="pregunta"
+                name="pregunta"
+                rows="3"
+                maxlength="1000"
+                required
+            >{{ pregunta }}</textarea>
+
+            <button type="submit">Consultar</button>
+        </form>
+
+        {% if error %}
+            <p role="alert">{{ error }}</p>
+        {% endif %}
+
+        {% if respuesta %}
+            <section aria-live="polite">
+                <h2>Respuesta</h2>
+                <p>{{ respuesta }}</p>
+            </section>
+        {% endif %}
+    </main>
+</body>
+</html>
