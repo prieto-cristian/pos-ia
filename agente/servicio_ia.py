@@ -14,6 +14,7 @@ from .herramientas import (
     obtener_productos_mas_vendidos,
     resumir_ventas,
     comparar_ventas_por_producto,
+    analizar_rotacion_stock,
 )
 
 
@@ -49,6 +50,14 @@ entre el período consultado y el período comparable anterior, y usá los
 aumentos y las caídas por producto para explicar qué contribuyó al cambio.
 Aclarale al usuario que la comparación se refiere a unidades, no a ingresos
 ni a rentabilidad.
+
+Para analizar la rotación y cobertura del stock, usa analizar_rotacion_stock.
+Si el usuario no especifica un período, considera los últimos 30 días.
+Explica que los días de cobertura son una estimación basada en las ventas
+del período y el stock actual. Los productos sin ventas en el período deben
+describirse como “sin ventas registradas en ese período”. No afirmes que
+están definitivamente sobrestockeados ni presentes la estimación como una
+fecha segura de agotamiento.
 """
 
 
@@ -75,6 +84,7 @@ def responder(pregunta):
                 obtener_productos_mas_vendidos,
                 resumir_ventas,
                 comparar_ventas_por_producto,
+                analizar_rotacion_stock,
             ],
             thinking_config=types.ThinkingConfig(
                 thinking_level=types.ThinkingLevel.MINIMAL,

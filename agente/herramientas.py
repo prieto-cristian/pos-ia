@@ -7,6 +7,7 @@ from .consultas import (
     productos_mas_vendidos,
     resumen_ventas,
     calcular_comparacion_ventas,
+    calcular_rotacion_stock,
 )
 
 def _fechas_de_periodo(
@@ -147,5 +148,41 @@ def comparar_ventas_por_producto(
         hasta_actual=actual_hasta.isoformat(),
         desde_comparacion=anterior_desde.isoformat(),
         hasta_comparacion=anterior_hasta.isoformat(),
+        limite=limite,
+    )
+
+def analizar_rotacion_stock(
+    tipo_periodo: str = "ultimos_n_dias",
+    anio: int = 0,
+    trimestre: int = 0,
+    dias: int = 30,
+    desde: str = "",
+    hasta: str = "",
+    limite: int = 10,
+):
+    """Analiza las ventas recientes frente al stock actual.
+
+    Devuelve productos activos con stock que no tuvieron ventas en el período
+    y productos ordenados por días estimados de cobertura.
+    """
+
+    fecha_desde, fecha_hasta = resolver_periodo(
+        tipo_periodo=tipo_periodo,
+        anio=anio,
+        trimestre=trimestre,
+        dias=dias,
+        desde=desde,
+        hasta=hasta,
+    )
+
+    if fecha_desde is None or fecha_hasta is None:
+        raise ValueError(
+            "Para analizar la rotación del stock se necesita un período "
+            "con fecha de inicio y fin."
+        )
+
+    return calcular_rotacion_stock(
+        desde=fecha_desde.isoformat(),
+        hasta=fecha_hasta.isoformat(),
         limite=limite,
     )

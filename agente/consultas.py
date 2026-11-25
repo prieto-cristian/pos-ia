@@ -248,3 +248,77 @@ def resumen_ventas(desde=None, hasta=None):
         "importe_cobrado": format(importe_cobrado, ".2f"),
         "saldo_pendiente": format(saldo_pendiente, ".2f"),
     }
+
+def calcular_rotacion_stock(desde, hasta, limite=10):
+    limite = max(1, min(int(limite), 20))
+
+    ventas, fecha_desde, fecha_hasta = _ventas_en_periodo(desde, hasta)
+    dias_analizados = (fecha_hasta - fecha_desde).days + 1
+
+    ventas_por_producto = (
+        DetalleVenta.objects
+        .filter(venta__in=ventas)
+        .values("producto_id")
+        .annotate(unidades=Sum("cantidad"))
+    )
+
+    unidades_por_producto = {
+        fila["producto_id"]: fila["unidades"] or 0
+        for fila in ventas_por_producto
+    }
+
+    productos_sin_ventas = []
+    productos_con_cobertura = []
+
+    productos = (
+        Producto.objects
+        .filter(activo=True, stock__gt=0)
+        .values("id", "nombre", "stock")
+    )
+
+    for producto in productos:
+        unidades = unidades_por_producto.get(producto["id"], 0)
+
+        if unidades == 0:
+            productos_sin_ventas.append({
+                "producto_id": producto["id"],
+                "nombre": producto["nombre"],
+                "stock_actual": producto["stock"],
+                "unidades_vendidas": 0,
+            })
+            continue
+
+        productos_con_cobertura.append({
+            "producto_id": producto["id"],
+            "nombre": producto["nombre"],
+            "stock_actual": producto["stock"],
+            "unidades_vendidas": unidades,
+            "promedio_unidades_por_dia": round(
+                unidades / dias_analizados,
+                2,
+            ),
+            "dias_cobertura_estimados": round(
+                producto["stock"] * dias_analizados / unidades,
+                1,
+            ),
+        })
+
+    productos_sin_ventas.sort(
+        key=lambda producto: producto["stock_actual"],
+        reverse=True,
+    )
+
+    productos_con_cobertura.sort(
+        key=lambda producto: producto["dias_cobertura_estimados"],
+        reverse=True,
+    )
+
+    return {
+        "periodo": {
+            "desde": fecha_desde.isoformat(),
+            "hasta": fecha_hasta.isoformat(),
+            "dias_analizados": dias_analizados,
+        },
+        "productos_sin_ventas": productos_sin_ventas[:limite],
+        "mayor_cobertura_estimada": productos_con_cobertura[:limite],
+    }
