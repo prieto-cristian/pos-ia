@@ -10,7 +10,7 @@ def consultar_ia(consulta, hilo=None):
             "opencode",
             "run",
             "--model",
-            "opencode/deepseek-v4.1-flash-free",
+            "opencode-go/deepseek-v4.1-flash#low",
             _armar_prompt(consulta, hilo or []),
         ],
         cwd=settings.BASE_DIR,

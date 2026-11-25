@@ -18,6 +18,41 @@ class ChatViewTests(TestCase):
         self.assertContains(response, 'name="consulta"')
         self.assertContains(response, "Enviar")
 
+    def test_el_aviso_de_procesamiento_esta_oculto_y_el_boton_habilitado_al_abrir_chat(
+        self,
+    ):
+        response = self.client.get(reverse("chat"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '<p id="aviso-procesando" role="status" hidden>')
+        self.assertContains(response, "La IA está procesando la consulta")
+        self.assertContains(response, '<button type="submit">Enviar</button>')
+
+    def test_la_pagina_con_la_respuesta_se_muestra_sin_aviso_y_con_el_formulario_habilitado(
+        self,
+    ):
+        with patch("chat.views.consultar_ia") as consultar_ia:
+            consultar_ia.return_value = "Vendiste $ 5500,00 en total."
+
+            response = self.client.post(
+                reverse("chat"),
+                {"consulta": "¿Cuánto vendí en total?"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Vendiste $ 5500,00 en total.")
+        self.assertContains(response, '<p id="aviso-procesando" role="status" hidden>')
+        self.assertContains(response, '<button type="submit">Enviar</button>')
+
+    def test_chat_carga_el_script_que_maneja_el_aviso_de_procesamiento(self):
+        response = self.client.get(reverse("chat"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertRegex(
+            response.content.decode(),
+            r'<script src="[^"]*chat/js/chat\.js" defer></script>',
+        )
+
     def test_enviar_una_consulta_muestra_la_respuesta_de_la_ia_en_la_misma_pagina(
         self,
     ):
