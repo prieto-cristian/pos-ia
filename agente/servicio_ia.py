@@ -15,6 +15,7 @@ from .herramientas import (
     resumir_ventas,
     comparar_ventas_por_producto,
     analizar_rotacion_stock,
+    analizar_rentabilidad_ventas,
 )
 
 
@@ -58,6 +59,13 @@ del período y el stock actual. Los productos sin ventas en el período deben
 describirse como “sin ventas registradas en ese período”. No afirmes que
 están definitivamente sobrestockeados ni presentes la estimación como una
 fecha segura de agotamiento.
+
+Para analizar la rentabilidad de las ventas, usa analizar_rentabilidad_ventas.
+Si el usuario no especifica un período, considera todo el historial disponible.
+La herramienta calcula rentabilidad bruta usando el precio y el costo guardados
+en los detalles de venta. No la describas como ganancia neta: no descuenta
+gastos del comercio ni otros costos no registrados. Diferencia ingresos,
+costo de los productos, ganancia bruta y margen bruto porcentual.
 """
 
 
@@ -85,6 +93,7 @@ def responder(pregunta):
                 resumir_ventas,
                 comparar_ventas_por_producto,
                 analizar_rotacion_stock,
+                analizar_rentabilidad_ventas,
             ],
             thinking_config=types.ThinkingConfig(
                 thinking_level=types.ThinkingLevel.MINIMAL,
