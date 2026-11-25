@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Chat</title>
+</head>
+<body>
+    <main>
+        <h1>Chat</h1>
+
+        {% if error %}
+            <p role="alert">{{ error }}</p>
+        {% endif %}
+
+        <form method="post" action="{% url 'chat' %}">
+            {% csrf_token %}
+            <label for="consulta">Consulta</label>
+            <textarea id="consulta" name="consulta" rows="3" cols="60"></textarea>
+
+            <button type="submit">Enviar</button>
+        </form>
+
+        {% if respuesta %}
+            <section aria-labelledby="respuesta-titulo">
+                <h2 id="respuesta-titulo">Respuesta</h2>
+                <p>{{ respuesta }}</p>
+            </section>
+        {% endif %}
+    </main>
+</body>
+</html>
