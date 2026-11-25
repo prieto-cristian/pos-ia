@@ -1,3 +1,4 @@
+import subprocess
 from unittest.mock import Mock, patch
 
 from django.conf import settings
@@ -167,6 +168,179 @@ class ChatViewTests(TestCase):
             self.assertContains(response, "Escribí una consulta")
             self.assertContains(response, 'name="consulta"')
 
+    def test_un_proceso_con_error_muestra_el_aviso_de_fallo_y_no_agrega_el_intento_al_hilo(
+        self,
+    ):
+        with patch("chat.services.subprocess.run") as run:
+            run.return_value = subprocess.CompletedProcess(
+                args=["opencode"],
+                returncode=1,
+                stdout="",
+                stderr="Error al ejecutar opencode",
+            )
+
+            response = self.client.post(
+                reverse("chat"),
+                {"consulta": "¿Cuánto vendí en total?"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "La IA no respondió")
+
+        html = self.client.get(reverse("chat")).content.decode()
+        self.assertEqual(html.count("Vos:"), 0)
+        self.assertEqual(html.count("IA:"), 0)
+
+    def test_una_ia_no_disponible_muestra_el_aviso_de_fallo_y_no_agrega_el_intento_al_hilo(
+        self,
+    ):
+        with patch("chat.services.subprocess.run") as run:
+            run.side_effect = FileNotFoundError
+
+            response = self.client.post(
+                reverse("chat"),
+                {"consulta": "¿Cuánto vendí en total?"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "La IA no respondió")
+
+        html = self.client.get(reverse("chat")).content.decode()
+        self.assertEqual(html.count("Vos:"), 0)
+        self.assertEqual(html.count("IA:"), 0)
+
+    def test_una_respuesta_vacia_muestra_el_aviso_de_fallo_y_no_agrega_el_intento_al_hilo(
+        self,
+    ):
+        with patch("chat.services.subprocess.run") as run:
+            run.return_value = subprocess.CompletedProcess(
+                args=["opencode"],
+                returncode=0,
+                stdout="   \n",
+                stderr="",
+            )
+
+            response = self.client.post(
+                reverse("chat"),
+                {"consulta": "¿Cuánto vendí en total?"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "La IA no respondió")
+
+        html = self.client.get(reverse("chat")).content.decode()
+        self.assertEqual(html.count("Vos:"), 0)
+        self.assertEqual(html.count("IA:"), 0)
+
+    def test_una_espera_de_mas_de_un_minuto_muestra_el_aviso_de_fallo_y_no_agrega_el_intento_al_hilo(
+        self,
+    ):
+        with patch("chat.services.subprocess.run") as run:
+            run.side_effect = subprocess.TimeoutExpired(
+                cmd="opencode",
+                timeout=60,
+            )
+
+            response = self.client.post(
+                reverse("chat"),
+                {"consulta": "¿Cuánto vendí en total?"},
+            )
+
+            self.assertEqual(run.call_args.kwargs["timeout"], 60)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "La IA no respondió")
+
+        html = self.client.get(reverse("chat")).content.decode()
+        self.assertEqual(html.count("Vos:"), 0)
+        self.assertEqual(html.count("IA:"), 0)
+
+    def test_tras_un_fallo_la_consulta_sigue_escrita_y_el_hilo_anterior_sigue_visible(
+        self,
+    ):
+        with patch("chat.services.subprocess.run") as run:
+            run.return_value = subprocess.CompletedProcess(
+                args=["opencode"],
+                returncode=0,
+                stdout="Vendiste $ 5500,00 en total.\n",
+                stderr="",
+            )
+            self.client.post(
+                reverse("chat"),
+                {"consulta": "¿Cuánto vendí en total?"},
+            )
+
+            run.side_effect = subprocess.TimeoutExpired(
+                cmd="opencode",
+                timeout=60,
+            )
+            response = self.client.post(
+                reverse("chat"),
+                {"consulta": "¿Y en enero?"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "La IA no respondió")
+        self.assertContains(response, "Vendiste $ 5500,00 en total.")
+        self.assertContains(response, "¿Y en enero?</textarea>")
+
+        html = response.content.decode()
+        self.assertEqual(html.count("Vos:"), 1)
+        self.assertEqual(html.count("IA:"), 1)
+
+    def test_tras_un_fallo_reintentar_con_exito_agrega_el_nuevo_intercambio_al_hilo(
+        self,
+    ):
+        with patch("chat.services.subprocess.run") as run:
+            run.return_value = subprocess.CompletedProcess(
+                args=["opencode"],
+                returncode=0,
+                stdout="Vendiste $ 5500,00 en total.\n",
+                stderr="",
+            )
+            self.client.post(
+                reverse("chat"),
+                {"consulta": "¿Cuánto vendí en total?"},
+            )
+
+            run.side_effect = subprocess.TimeoutExpired(
+                cmd="opencode",
+                timeout=60,
+            )
+            self.client.post(
+                reverse("chat"),
+                {"consulta": "¿Y en enero?"},
+            )
+
+            run.side_effect = None
+            run.return_value = subprocess.CompletedProcess(
+                args=["opencode"],
+                returncode=0,
+                stdout="En enero vendiste $ 4200,00.\n",
+                stderr="",
+            )
+            response = self.client.post(
+                reverse("chat"),
+                {"consulta": "¿Y en enero?"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "La IA no respondió")
+        html = response.content.decode()
+        intercambios = [
+            "¿Cuánto vendí en total?",
+            "Vendiste $ 5500,00 en total.",
+            "¿Y en enero?",
+            "En enero vendiste $ 4200,00.",
+        ]
+        for texto in intercambios:
+            self.assertIn(texto, html)
+        posiciones = [html.index(texto) for texto in intercambios]
+        self.assertEqual(posiciones, sorted(posiciones))
+        self.assertEqual(html.count("Vos:"), 2)
+        self.assertEqual(html.count("IA:"), 2)
+        self.assertEqual(html.count("¿Y en enero?"), 1)
+
     def test_una_pregunta_de_seguimiento_se_envia_a_la_ia_con_el_intercambio_anterior(
         self,
     ):
@@ -297,11 +471,12 @@ class ConsultarIATests(TestCase):
                 "opencode",
                 "run",
                 "--model",
-                "opencode/deepseek-v4.1-flash-free",
+                "opencode-go/deepseek-v4.1-flash#low",
                 "¿Cuánto vendí?",
             ],
             cwd=settings.BASE_DIR,
             capture_output=True,
             text=True,
+            timeout=60,
         )
         self.assertEqual(respuesta, "Vendiste $ 5500,00 en total.")

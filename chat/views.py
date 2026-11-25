@@ -1,7 +1,7 @@
 from django.shortcuts import render
 from django.views import View
 
-from .services import consultar_ia
+from .services import FalloIA, consultar_ia
 
 
 class ChatView(View):
@@ -24,7 +24,18 @@ class ChatView(View):
                 },
             )
         hilo = request.session.get("hilo", [])
-        respuesta = consultar_ia(consulta, hilo)
+        try:
+            respuesta = consultar_ia(consulta, hilo)
+        except FalloIA:
+            return render(
+                request,
+                "chat/chat.html",
+                {
+                    "error": "La IA no respondió. Tu consulta sigue escrita para reintentar.",
+                    "hilo": hilo,
+                    "consulta": consulta,
+                },
+            )
         hilo = hilo + [{"pregunta": consulta, "respuesta": respuesta}]
         request.session["hilo"] = hilo
         return render(request, "chat/chat.html", {"hilo": hilo})
