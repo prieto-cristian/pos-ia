@@ -98,6 +98,16 @@ Creá un usuario para ingresar a Django Admin:
 python manage.py createsuperuser
 ```
 
+### Datos de demostración
+
+Para cargar un almacén de barrio de ejemplo con 12 meses de historial:
+
+```bash
+python manage.py poblar_demo --reset
+```
+
+El comando genera categorías, proveedores, productos, compras y ventas. `--reset` reemplaza los datos de productos, ventas y compras existentes, pero no borra usuarios ni sesiones. También acepta `--ventas` (700 por defecto), `--dias` (365) y `--seed` (semilla reproducible).
+
 ### Iniciar el servidor
 
 ```bash

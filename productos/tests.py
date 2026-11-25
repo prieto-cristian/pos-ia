@@ -1,6 +1,11 @@
 from decimal import Decimal
+from io import StringIO
 
+from django.core.management import call_command
 from django.test import TestCase
+
+from compras.models import Compra
+from ventas.models import Venta
 
 from .models import Producto, Proveedor
 
@@ -30,3 +35,28 @@ class DescuentoDeStockTests(TestCase):
 
         self.producto.refresh_from_db()
         self.assertEqual(self.producto.stock, 0)
+
+
+class PoblarDemoTests(TestCase):
+    def test_poblar_demo_genera_datos_consistentes(self):
+        salida = StringIO()
+
+        call_command(
+            "poblar_demo",
+            "--reset",
+            "--ventas",
+            "40",
+            "--dias",
+            "60",
+            "--seed",
+            "7",
+            stdout=salida,
+        )
+
+        self.assertEqual(Producto.objects.count(), 64)
+        self.assertTrue(Compra.objects.exists())
+        self.assertTrue(Venta.objects.exists())
+        self.assertFalse(Producto.objects.filter(stock__lt=0).exists())
+
+        for venta in Venta.objects.prefetch_related("detalles", "pagos"):
+            self.assertLessEqual(venta.total_pagado, venta.monto_total)
