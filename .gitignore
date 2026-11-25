@@ -175,3 +175,7 @@ cython_debug/
 .opencode
 AGENTS.md
 backlog.md
+plan.md
+skills-lock.json
+.agents
+.impeccable

@@ -1,0 +1,43 @@
+{% load static %}
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Chat</title>
+    <script src="{% static 'chat/js/chat.js' %}" defer></script>
+</head>
+<body>
+    <main>
+        <h1>Chat</h1>
+
+        {% if error %}
+            <p role="alert">{{ error }}</p>
+        {% endif %}
+
+        {% if hilo %}
+            <section aria-labelledby="hilo-titulo">
+                <h2 id="hilo-titulo">Conversación</h2>
+                <ol>
+                    {% for intercambio in hilo %}
+                        <li>
+                            <p><strong>Vos:</strong> {{ intercambio.pregunta }}</p>
+                            <p><strong>IA:</strong> {{ intercambio.respuesta }}</p>
+                        </li>
+                    {% endfor %}
+                </ol>
+            </section>
+        {% endif %}
+
+        <form method="post" action="{% url 'chat' %}">
+            {% csrf_token %}
+            <label for="consulta">Consulta</label>
+            <textarea id="consulta" name="consulta" rows="3" cols="60">{{ consulta }}</textarea>
+
+            <p id="aviso-procesando" role="status" hidden>La IA está procesando la consulta…</p>
+
+            <button type="submit">Enviar</button>
+        </form>
+    </main>
+</body>
+</html>

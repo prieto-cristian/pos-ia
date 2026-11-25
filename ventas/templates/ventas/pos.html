@@ -1,0 +1,150 @@
+{% load static %}
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Punto de venta</title>
+    <script src="{% static 'ventas/js/pagos.js' %}" defer></script>
+</head>
+<body>
+    <main>
+        <h1>Punto de venta</h1>
+
+        {% if error %}
+            <p role="alert">{{ error }}</p>
+        {% endif %}
+
+        {% if venta %}
+            <p role="status">Venta N°{{ venta.pk }} registrada.</p>
+        {% endif %}
+
+        <form method="post" action="{% url 'agregar_al_carrito' %}">
+            {% csrf_token %}
+            <label for="codigo_barras">Código de barras</label>
+            <input id="codigo_barras" type="text" name="codigo_barras"
+                   autofocus autocomplete="off">
+
+            <input type="hidden" name="items" value="{{ items }}">
+
+            <button type="submit">Agregar</button>
+        </form>
+
+        <form method="post" action="{% url 'buscar_productos' %}">
+            {% csrf_token %}
+            <label for="nombre">Buscar por nombre</label>
+            <input id="nombre" type="text" name="nombre" autocomplete="off">
+
+            <input type="hidden" name="items" value="{{ items }}">
+
+            <button type="submit">Buscar</button>
+        </form>
+
+        {% if resultados %}
+            <section aria-labelledby="resultados-titulo">
+                <h2 id="resultados-titulo">Resultados</h2>
+
+                <ul>
+                    {% for producto in resultados %}
+                        <li>
+                            {{ producto.nombre }} — $ {{ producto.precio_venta }}
+
+                            <form method="post"
+                                  action="{% url 'agregar_desde_resultados' %}">
+                                {% csrf_token %}
+                                <input type="hidden" name="producto_id"
+                                       value="{{ producto.pk }}">
+                                <input type="hidden" name="items"
+                                       value="{{ items }}">
+                                <input type="hidden" name="nombre"
+                                       value="{{ nombre }}">
+
+                                <button type="submit">Agregar</button>
+                            </form>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </section>
+        {% endif %}
+
+        {% if sin_resultados %}
+            <p role="alert">No se encontraron productos.</p>
+        {% endif %}
+
+        <section aria-labelledby="carrito-titulo">
+            <h2 id="carrito-titulo">Carrito</h2>
+
+            {% if lineas %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Producto</th>
+                            <th>Cantidad</th>
+                            <th>Precio unitario</th>
+                            <th>Importe</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for linea in lineas %}
+                            <tr data-producto-id="{{ linea.producto.pk }}"
+                                data-cantidad="{{ linea.cantidad }}">
+                                <td>{{ linea.producto.nombre }}</td>
+                                <td>
+                                    <form method="post"
+                                          action="{% url 'actualizar_cantidad' %}">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="items"
+                                               value="{{ items }}">
+                                        <input type="hidden" name="producto_id"
+                                               value="{{ linea.producto.pk }}">
+
+                                        <label for="cantidad-{{ linea.producto.pk }}">Cantidad</label>
+                                        <input id="cantidad-{{ linea.producto.pk }}"
+                                               type="number" name="cantidad"
+                                               value="{{ linea.cantidad }}">
+
+                                        <button type="submit">Actualizar</button>
+                                        <button type="submit"
+                                                formaction="{% url 'quitar_del_carrito' %}">Quitar</button>
+                                    </form>
+                                </td>
+                                <td>$ {{ linea.producto.precio_venta }}</td>
+                                <td>$ {{ linea.subtotal }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+
+                <p>Total: $ {{ total }}</p>
+            {% else %}
+                <p>Carrito vacío</p>
+            {% endif %}
+        </section>
+
+        <form method="post" action="{% url 'registrar_venta' %}"
+              id="form-pago" data-total="{{ total }}">
+            {% csrf_token %}
+            <input type="hidden" name="items" value="{{ items }}">
+
+            <fieldset>
+                <legend>Medios de pago</legend>
+
+                {% for valor, etiqueta in medios_pago %}
+                    <div data-medio-pago="{{ valor }}">
+                        <input id="medio-{{ valor }}" type="checkbox"
+                               name="medio_pago" value="{{ valor }}">
+                        <label for="medio-{{ valor }}">{{ etiqueta }}</label>
+
+                        <label for="importe-{{ valor }}">Importe</label>
+                        <input id="importe-{{ valor }}" type="number"
+                               name="importe_{{ valor }}" step="0.01" min="0"
+                               inputmode="decimal" hidden>
+                    </div>
+                {% endfor %}
+            </fieldset>
+
+            <button type="submit">Registrar venta</button>
+        </form>
+    </main>
+</body>
+</html>

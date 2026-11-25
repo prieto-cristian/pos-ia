@@ -60,6 +60,10 @@ class Producto(models.Model):
     def __str__(self):
         return self.nombre
 
+    def descontar_stock(self, cantidad):
+        self.stock = max(self.stock - cantidad, 0)
+        self.save(update_fields=["stock"])
+
     class Meta:
         verbose_name = "Producto"
         verbose_name_plural = "Productos"
