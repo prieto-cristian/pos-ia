@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from django.conf import settings
 from django.test import TestCase
@@ -30,7 +30,7 @@ class ChatViewTests(TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        consultar_ia.assert_called_once_with("¿Cuánto vendí en total?")
+        consultar_ia.assert_called_once_with("¿Cuánto vendí en total?", [])
         self.assertContains(response, "Vendiste $ 5500,00 en total.")
         self.assertContains(response, 'name="consulta"')
 
@@ -103,7 +103,7 @@ class ChatViewTests(TestCase):
 
             response = self.client.post(reverse("chat"), {"consulta": "   "})
 
-            consultar_ia.assert_called_once_with("¿Cuánto vendí en total?")
+            consultar_ia.assert_called_once_with("¿Cuánto vendí en total?", [])
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Escribí una consulta")
@@ -131,6 +131,121 @@ class ChatViewTests(TestCase):
             consultar_ia.assert_not_called()
             self.assertContains(response, "Escribí una consulta")
             self.assertContains(response, 'name="consulta"')
+
+    def test_una_pregunta_de_seguimiento_se_envia_a_la_ia_con_el_intercambio_anterior(
+        self,
+    ):
+        with patch("chat.services.subprocess.run") as run:
+            run.side_effect = [
+                Mock(stdout="Vendiste $ 5500,00 en total.\n"),
+                Mock(stdout="En enero vendiste $ 4200,00.\n"),
+            ]
+
+            self.client.post(
+                reverse("chat"),
+                {"consulta": "¿Cuánto vendí en total?"},
+            )
+            response = self.client.post(
+                reverse("chat"),
+                {"consulta": "¿Y en enero?"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        comando = run.call_args.args[0]
+        self.assertEqual(
+            comando[-1],
+            (
+                "Conversación previa:\n"
+                "Vos: ¿Cuánto vendí en total?\n"
+                "IA: Vendiste $ 5500,00 en total.\n"
+                "\n"
+                "Consulta actual: ¿Y en enero?"
+            ),
+        )
+
+    def test_un_seguimiento_con_varios_intercambios_se_envia_a_la_ia_con_todo_el_hilo(
+        self,
+    ):
+        with patch("chat.services.subprocess.run") as run:
+            run.side_effect = [
+                Mock(stdout="Vendiste $ 5500,00 en total.\n"),
+                Mock(stdout="Tu producto más vendido es Café molido.\n"),
+                Mock(stdout="En enero vendiste $ 4200,00.\n"),
+            ]
+
+            self.client.post(
+                reverse("chat"),
+                {"consulta": "¿Cuánto vendí en total?"},
+            )
+            self.client.post(
+                reverse("chat"),
+                {"consulta": "¿Cuál fue mi producto más vendido?"},
+            )
+            response = self.client.post(
+                reverse("chat"),
+                {"consulta": "¿Y en enero?"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        comando = run.call_args.args[0]
+        self.assertEqual(
+            comando[-1],
+            (
+                "Conversación previa:\n"
+                "Vos: ¿Cuánto vendí en total?\n"
+                "IA: Vendiste $ 5500,00 en total.\n"
+                "Vos: ¿Cuál fue mi producto más vendido?\n"
+                "IA: Tu producto más vendido es Café molido.\n"
+                "\n"
+                "Consulta actual: ¿Y en enero?"
+            ),
+        )
+
+    def test_un_seguimiento_despues_de_volver_a_chat_se_envia_a_la_ia_con_el_hilo_anterior(
+        self,
+    ):
+        with patch("chat.services.subprocess.run") as run:
+            run.side_effect = [
+                Mock(stdout="Vendiste $ 5500,00 en total.\n"),
+                Mock(stdout="En enero vendiste $ 4200,00.\n"),
+            ]
+
+            self.client.post(
+                reverse("chat"),
+                {"consulta": "¿Cuánto vendí en total?"},
+            )
+            respuesta_anterior = self.client.get(reverse("chat"))
+            response = self.client.post(
+                reverse("chat"),
+                {"consulta": "¿Y en enero?"},
+            )
+
+        self.assertContains(respuesta_anterior, "Vendiste $ 5500,00 en total.")
+        self.assertEqual(response.status_code, 200)
+        comando = run.call_args.args[0]
+        self.assertEqual(
+            comando[-1],
+            (
+                "Conversación previa:\n"
+                "Vos: ¿Cuánto vendí en total?\n"
+                "IA: Vendiste $ 5500,00 en total.\n"
+                "\n"
+                "Consulta actual: ¿Y en enero?"
+            ),
+        )
+
+    def test_la_primera_consulta_se_envia_a_la_ia_sin_contexto_previo(self):
+        with patch("chat.services.subprocess.run") as run:
+            run.return_value.stdout = "Vendiste $ 5500,00 en total.\n"
+
+            response = self.client.post(
+                reverse("chat"),
+                {"consulta": "¿Cuánto vendí en total?"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        comando = run.call_args.args[0]
+        self.assertEqual(comando[-1], "¿Cuánto vendí en total?")
 
 
 class ConsultarIATests(TestCase):

@@ -23,8 +23,8 @@ class ChatView(View):
                     "hilo": request.session.get("hilo", []),
                 },
             )
-        respuesta = consultar_ia(consulta)
         hilo = request.session.get("hilo", [])
-        hilo.append({"pregunta": consulta, "respuesta": respuesta})
+        respuesta = consultar_ia(consulta, hilo)
+        hilo = hilo + [{"pregunta": consulta, "respuesta": respuesta}]
         request.session["hilo"] = hilo
         return render(request, "chat/chat.html", {"hilo": hilo})
