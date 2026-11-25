@@ -102,6 +102,138 @@ class ChatViewTests(TestCase):
         self.assertEqual(posiciones, sorted(posiciones))
         self.assertContains(response, 'name="consulta"')
 
+    def test_con_tres_intercambios_la_pagina_los_muestra_todos_en_orden(self):
+        session = self.client.session
+        session["hilo"] = [
+            {
+                "pregunta": "¿Cuánto vendí en enero?",
+                "respuesta": "En enero vendiste $ 4200,00.",
+            },
+            {
+                "pregunta": "¿Y en febrero?",
+                "respuesta": "En febrero vendiste $ 3100,00.",
+            },
+            {
+                "pregunta": "¿Y en marzo?",
+                "respuesta": "En marzo vendiste $ 2800,00.",
+            },
+        ]
+        session.save()
+
+        response = self.client.get(reverse("chat"))
+
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        intercambios = [
+            "¿Cuánto vendí en enero?",
+            "En enero vendiste $ 4200,00.",
+            "¿Y en febrero?",
+            "En febrero vendiste $ 3100,00.",
+            "¿Y en marzo?",
+            "En marzo vendiste $ 2800,00.",
+        ]
+        for texto in intercambios:
+            self.assertIn(texto, html)
+        posiciones = [html.index(texto) for texto in intercambios]
+        self.assertEqual(posiciones, sorted(posiciones))
+
+    def test_con_mas_de_tres_intercambios_la_pagina_muestra_solo_los_tres_mas_recientes(
+        self,
+    ):
+        session = self.client.session
+        session["hilo"] = [
+            {
+                "pregunta": "¿Cuánto vendí en enero?",
+                "respuesta": "En enero vendiste $ 4200,00.",
+            },
+            {
+                "pregunta": "¿Y en febrero?",
+                "respuesta": "En febrero vendiste $ 3100,00.",
+            },
+            {
+                "pregunta": "¿Y en marzo?",
+                "respuesta": "En marzo vendiste $ 2800,00.",
+            },
+            {
+                "pregunta": "¿Y en abril?",
+                "respuesta": "En abril vendiste $ 1900,00.",
+            },
+            {
+                "pregunta": "¿Y en mayo?",
+                "respuesta": "En mayo vendiste $ 2400,00.",
+            },
+        ]
+        session.save()
+
+        response = self.client.get(reverse("chat"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "¿Cuánto vendí en enero?")
+        self.assertNotContains(response, "En enero vendiste $ 4200,00.")
+        self.assertNotContains(response, "¿Y en febrero?")
+        self.assertNotContains(response, "En febrero vendiste $ 3100,00.")
+        html = response.content.decode()
+        intercambios = [
+            "¿Y en marzo?",
+            "En marzo vendiste $ 2800,00.",
+            "¿Y en abril?",
+            "En abril vendiste $ 1900,00.",
+            "¿Y en mayo?",
+            "En mayo vendiste $ 2400,00.",
+        ]
+        for texto in intercambios:
+            self.assertIn(texto, html)
+        posiciones = [html.index(texto) for texto in intercambios]
+        self.assertEqual(posiciones, sorted(posiciones))
+
+    def test_el_cuarto_intercambio_descarta_el_mas_viejo_del_hilo_visible(self):
+        session = self.client.session
+        session["hilo"] = [
+            {
+                "pregunta": "¿Cuánto vendí en enero?",
+                "respuesta": "En enero vendiste $ 4200,00.",
+            },
+            {
+                "pregunta": "¿Y en febrero?",
+                "respuesta": "En febrero vendiste $ 3100,00.",
+            },
+            {
+                "pregunta": "¿Y en marzo?",
+                "respuesta": "En marzo vendiste $ 2800,00.",
+            },
+        ]
+        session.save()
+
+        with patch("chat.views.consultar_ia") as consultar_ia:
+            consultar_ia.return_value = "En abril vendiste $ 1900,00."
+            response = self.client.post(
+                reverse("chat"),
+                {"consulta": "¿Y en abril?"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "¿Cuánto vendí en enero?")
+        self.assertNotContains(response, "En enero vendiste $ 4200,00.")
+        html = response.content.decode()
+        intercambios = [
+            "¿Y en febrero?",
+            "En febrero vendiste $ 3100,00.",
+            "¿Y en marzo?",
+            "En marzo vendiste $ 2800,00.",
+            "¿Y en abril?",
+            "En abril vendiste $ 1900,00.",
+        ]
+        for texto in intercambios:
+            self.assertIn(texto, html)
+        posiciones = [html.index(texto) for texto in intercambios]
+        self.assertEqual(posiciones, sorted(posiciones))
+
+        response = self.client.get(reverse("chat"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "¿Cuánto vendí en enero?")
+        self.assertNotContains(response, "En enero vendiste $ 4200,00.")
+
     def test_una_nueva_consulta_agrega_su_intercambio_al_final_del_hilo(self):
         with patch("chat.views.consultar_ia") as consultar_ia:
             consultar_ia.return_value = "Vendiste $ 5500,00 en total."
@@ -340,6 +472,56 @@ class ChatViewTests(TestCase):
         self.assertEqual(html.count("Vos:"), 2)
         self.assertEqual(html.count("IA:"), 2)
         self.assertEqual(html.count("¿Y en enero?"), 1)
+
+    def test_el_contexto_para_la_ia_no_incluye_el_intercambio_descartado(self):
+        session = self.client.session
+        session["hilo"] = [
+            {
+                "pregunta": "¿Cuánto vendí en enero?",
+                "respuesta": "En enero vendiste $ 4200,00.",
+            },
+            {
+                "pregunta": "¿Y en febrero?",
+                "respuesta": "En febrero vendiste $ 3100,00.",
+            },
+            {
+                "pregunta": "¿Y en marzo?",
+                "respuesta": "En marzo vendiste $ 2800,00.",
+            },
+        ]
+        session.save()
+
+        with patch("chat.services.subprocess.run") as run:
+            run.side_effect = [
+                Mock(stdout="En abril vendiste $ 1900,00.\n"),
+                Mock(stdout="En mayo vendiste $ 2400,00.\n"),
+            ]
+
+            self.client.post(
+                reverse("chat"),
+                {"consulta": "¿Y en abril?"},
+            )
+            response = self.client.post(
+                reverse("chat"),
+                {"consulta": "¿Y en mayo?"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        comando = run.call_args.args[0]
+        self.assertEqual(
+            comando[-1],
+            (
+                "Conversación previa:\n"
+                "Vos: ¿Y en febrero?\n"
+                "IA: En febrero vendiste $ 3100,00.\n"
+                "Vos: ¿Y en marzo?\n"
+                "IA: En marzo vendiste $ 2800,00.\n"
+                "Vos: ¿Y en abril?\n"
+                "IA: En abril vendiste $ 1900,00.\n"
+                "\n"
+                "Consulta actual: ¿Y en mayo?"
+            ),
+        )
 
     def test_una_pregunta_de_seguimiento_se_envia_a_la_ia_con_el_intercambio_anterior(
         self,

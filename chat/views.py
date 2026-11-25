@@ -9,7 +9,7 @@ class ChatView(View):
         return render(
             request,
             "chat/chat.html",
-            {"hilo": request.session.get("hilo", [])},
+            {"hilo": request.session.get("hilo", [])[-3:]},
         )
 
     def post(self, request):
@@ -36,6 +36,6 @@ class ChatView(View):
                     "consulta": consulta,
                 },
             )
-        hilo = hilo + [{"pregunta": consulta, "respuesta": respuesta}]
+        hilo = (hilo + [{"pregunta": consulta, "respuesta": respuesta}])[-3:]
         request.session["hilo"] = hilo
         return render(request, "chat/chat.html", {"hilo": hilo})
