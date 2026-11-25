@@ -322,3 +322,99 @@ def calcular_rotacion_stock(desde, hasta, limite=10):
         "productos_sin_ventas": productos_sin_ventas[:limite],
         "mayor_cobertura_estimada": productos_con_cobertura[:limite],
     }
+
+def calcular_rentabilidad_ventas(desde=None, hasta=None, limite=10):
+    limite = max(1, min(int(limite), 20))
+
+    ventas, fecha_desde, fecha_hasta = _ventas_en_periodo(desde, hasta)
+    detalles = DetalleVenta.objects.filter(venta__in=ventas)
+
+    totales = detalles.aggregate(
+        unidades=Sum("cantidad"),
+        ingresos=Sum(F("precio_unitario") * F("cantidad")),
+        costo=Sum(F("costo_unitario") * F("cantidad")),
+    )
+
+    ingresos_totales = totales["ingresos"] or Decimal("0.00")
+    costo_total = totales["costo"] or Decimal("0.00")
+    ganancia_total = ingresos_totales - costo_total
+
+    margen_total = None
+    if ingresos_totales:
+        margen_total = format(
+            ganancia_total * Decimal("100") / ingresos_totales,
+            ".1f",
+        )
+
+    resultados = (
+        detalles
+        .values("producto_id", "producto__nombre")
+        .annotate(
+            unidades=Sum("cantidad"),
+            ingresos=Sum(F("precio_unitario") * F("cantidad")),
+            costo=Sum(F("costo_unitario") * F("cantidad")),
+        )
+    )
+
+    productos = []
+
+    for fila in resultados:
+        ingresos = fila["ingresos"] or Decimal("0.00")
+        costo = fila["costo"] or Decimal("0.00")
+        ganancia = ingresos - costo
+
+        margen = None
+        if ingresos:
+            margen = format(
+                ganancia * Decimal("100") / ingresos,
+                ".1f",
+            )
+
+        productos.append({
+            "producto_id": fila["producto_id"],
+            "nombre": fila["producto__nombre"],
+            "unidades_vendidas": fila["unidades"] or 0,
+            "ingresos": format(ingresos, ".2f"),
+            "costo_productos": format(costo, ".2f"),
+            "ganancia_bruta": format(ganancia, ".2f"),
+            "margen_bruto_porcentual": margen,
+        })
+
+    mayor_ganancia = sorted(
+        productos,
+        key=lambda producto: Decimal(producto["ganancia_bruta"]),
+        reverse=True,
+    )[:limite]
+
+    productos_con_ingresos = [
+        producto for producto in productos
+        if producto["margen_bruto_porcentual"] is not None
+    ]
+
+    menor_margen = sorted(
+        productos_con_ingresos,
+        key=lambda producto: Decimal(
+            producto["margen_bruto_porcentual"]
+        ),
+    )[:limite]
+
+    return {
+        "periodo": {
+            "desde": fecha_desde.isoformat() if fecha_desde else None,
+            "hasta": fecha_hasta.isoformat() if fecha_hasta else None,
+            "tipo": (
+                "historial_completo"
+                if fecha_desde is None
+                else "rango_especificado"
+            ),
+        },
+        "resumen": {
+            "unidades_vendidas": totales["unidades"] or 0,
+            "ingresos": format(ingresos_totales, ".2f"),
+            "costo_productos": format(costo_total, ".2f"),
+            "ganancia_bruta": format(ganancia_total, ".2f"),
+            "margen_bruto_porcentual": margen_total,
+        },
+        "productos_mayor_ganancia": mayor_ganancia,
+        "productos_menor_margen": menor_margen,
+    }

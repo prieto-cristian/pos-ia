@@ -8,6 +8,7 @@ from .consultas import (
     resumen_ventas,
     calcular_comparacion_ventas,
     calcular_rotacion_stock,
+    calcular_rentabilidad_ventas,
 )
 
 def _fechas_de_periodo(
@@ -184,5 +185,31 @@ def analizar_rotacion_stock(
     return calcular_rotacion_stock(
         desde=fecha_desde.isoformat(),
         hasta=fecha_hasta.isoformat(),
+        limite=limite,
+    )
+
+def analizar_rentabilidad_ventas(
+    tipo_periodo: str = "historial_completo",
+    anio: int = 0,
+    trimestre: int = 0,
+    dias: int = 0,
+    desde: str = "",
+    hasta: str = "",
+    limite: int = 10,
+):
+    """Analiza ingresos, costo y rentabilidad bruta de las ventas."""
+
+    fecha_desde, fecha_hasta = resolver_periodo(
+        tipo_periodo=tipo_periodo,
+        anio=anio,
+        trimestre=trimestre,
+        dias=dias,
+        desde=desde,
+        hasta=hasta,
+    )
+
+    return calcular_rentabilidad_ventas(
+        desde=fecha_desde.isoformat() if fecha_desde else None,
+        hasta=fecha_hasta.isoformat() if fecha_hasta else None,
         limite=limite,
     )
