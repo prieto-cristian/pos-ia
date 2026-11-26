@@ -1,0 +1,57 @@
+{% load static %}
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#e9eef4">
+    <meta name="color-scheme" content="light">
+    <title>{% block title %}PosIA · Punto de venta{% endblock %}</title>
+    <link rel="icon" href="{% static 'posia/favicon.svg' %}" type="image/svg+xml">
+    <link rel="stylesheet" href="{% static 'posia/css/app.css' %}">
+    <script src="{% static 'posia/js/shell.js' %}" defer></script>
+    {% block head %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+    <a class="skip-link" href="#contenido">Saltar al contenido</a>
+    {% include "partials/icons.html" %}
+
+    <div class="sidebar-scrim" data-sidebar-close hidden></div>
+
+    <div class="app-frame">
+        {% include "partials/sidebar.html" %}
+        <main class="app-content" id="contenido">
+            <div class="mobile-topbar">
+                <button class="mobile-menu" type="button" data-sidebar-toggle
+                        aria-controls="sidebar" aria-expanded="false"
+                        aria-label="Abrir navegación">
+                    <svg class="icon" aria-hidden="true"><use href="#i-menu"></use></svg>
+                </button>
+                <a class="mobile-brand" href="{% url 'pos' %}">
+                    <span class="mobile-brand-mark" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             stroke-width="2" stroke-linecap="round"
+                             stroke-linejoin="round">
+                            <path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3z"/>
+                            <path d="M9 8h6M9 12h6"/>
+                        </svg>
+                    </span>
+                    <span>PosIA</span>
+                </a>
+                <span class="mobile-context">
+                    {% if nav_activo == 'asistente' %}
+                        Asistente
+                    {% elif nav_activo == 'chat' %}
+                        Chat
+                    {% else %}
+                        Caja 1
+                    {% endif %}
+                </span>
+            </div>
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

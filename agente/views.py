@@ -9,10 +9,44 @@ from .servicio_ia import responder
 
 logger = logging.getLogger(__name__)
 
+CONSULTAS = [
+    {
+        "icono": "i-alert",
+        "titulo": "Stock bajo",
+        "pregunta": "¿Qué productos tienen stock bajo?",
+    },
+    {
+        "icono": "i-trend",
+        "titulo": "Más vendidos",
+        "pregunta": "¿Cuáles fueron los productos más vendidos este mes?",
+    },
+    {
+        "icono": "i-cash",
+        "titulo": "Ventas y cobros",
+        "pregunta": "¿Cuánto vendí y cuánto cobré esta semana?",
+    },
+    {
+        "icono": "i-compare",
+        "titulo": "Comparación",
+        "pregunta": "¿Cómo variaron las unidades vendidas este mes?",
+    },
+    {
+        "icono": "i-clock",
+        "titulo": "Cobertura de stock",
+        "pregunta": "¿Qué productos tienen más días estimados de cobertura?",
+    },
+    {
+        "icono": "i-chart",
+        "titulo": "Rentabilidad",
+        "pregunta": "¿Qué productos me dejaron más ganancia bruta?",
+    },
+]
+
 
 @require_http_methods(["GET", "POST"])
 def chat(request):
     pregunta = ""
+    pregunta_respondida = ""
     respuesta = ""
     error = ""
 
@@ -26,6 +60,8 @@ def chat(request):
         else:
             try:
                 respuesta = responder(pregunta)
+                pregunta_respondida = pregunta
+                pregunta = ""
 
             except ServerError as exc:
                 logger.exception("Error del servidor de Gemini")
@@ -63,7 +99,10 @@ def chat(request):
         request,
         "agente/chat.html",
         {
+            "nav_activo": "asistente",
+            "consultas": CONSULTAS,
             "pregunta": pregunta,
+            "pregunta_respondida": pregunta_respondida,
             "respuesta": respuesta,
             "error": error,
         },

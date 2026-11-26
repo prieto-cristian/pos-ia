@@ -1,265 +1,124 @@
+import html as html_module
 import json
+import re
 from decimal import Decimal
-from html.parser import HTMLParser
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 
-from productos.models import Producto, Proveedor
+from productos.models import Categoria, Producto, Proveedor
+from ventas.templatetags.formato import pesos
+
 from .models import DetalleVenta, Pago, Venta
 
 
-class _ItemsParser(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.value = None
-
-    def handle_starttag(self, tag, attrs):
-        if tag != "input":
-            return
-        attrs = dict(attrs)
-        if attrs.get("name") == "items":
-            self.value = attrs.get("value")
+def _json_script(response, element_id):
+    html = response.content.decode()
+    patron = (
+        rf'<script id="{element_id}" type="application/json">(.*?)</script>'
+    )
+    coincidencia = re.search(patron, html, re.S)
+    return json.loads(coincidencia.group(1)) if coincidencia else None
 
 
-class _FormulariosParser(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.formularios = []
-        self._actual = None
-        self._en_boton = False
-        self._formaction_boton = None
-
-    def handle_starttag(self, tag, attrs):
-        attrs = dict(attrs)
-        if tag == "form":
-            self._actual = {
-                "action": attrs.get("action"),
-                "campos": {},
-                "botones": [],
-                "formactions": {},
-            }
-            self.formularios.append(self._actual)
-        elif tag == "input" and self._actual is not None:
-            nombre = attrs.get("name")
-            if nombre:
-                self._actual["campos"][nombre] = attrs.get("value")
-        elif tag == "button" and self._actual is not None:
-            self._en_boton = True
-            self._formaction_boton = attrs.get("formaction")
-
-    def handle_data(self, data):
-        if self._en_boton and self._actual is not None and data.strip():
-            texto = data.strip()
-            self._actual["botones"].append(texto)
-            if self._formaction_boton:
-                self._actual["formactions"][texto] = self._formaction_boton
-
-    def handle_endtag(self, tag):
-        if tag == "button":
-            self._en_boton = False
-            self._formaction_boton = None
-        elif tag == "form":
-            self._actual = None
-            self._en_boton = False
+def catalogo_enviado(response):
+    return _json_script(response, "pos-catalogo")
 
 
-class _FilasCarritoParser(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.filas = {}
-        self._producto_id = None
-        self._celda = None
-        self._en_formulario = False
-
-    def handle_starttag(self, tag, attrs):
-        attrs = dict(attrs)
-        if tag == "tr" and attrs.get("data-producto-id"):
-            self._producto_id = attrs["data-producto-id"]
-            self.filas[self._producto_id] = []
-        elif tag == "td" and self._producto_id is not None:
-            self._celda = []
-        elif tag == "form":
-            self._en_formulario = True
-        elif tag == "input" and self._celda is not None:
-            if attrs.get("name") == "cantidad":
-                self._celda.append(attrs.get("value", ""))
-
-    def handle_data(self, data):
-        if self._celda is not None and not self._en_formulario:
-            self._celda.append(data)
-
-    def handle_endtag(self, tag):
-        if tag == "form":
-            self._en_formulario = False
-        elif tag == "td" and self._celda is not None:
-            self.filas[self._producto_id].append(
-                " ".join("".join(self._celda).split())
-            )
-            self._celda = None
-        elif tag == "tr" and self._producto_id is not None:
-            self._producto_id = None
-
-
-class _CamposDePagoParser(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.medios = set()
-        self.importes = set()
-
-    def handle_starttag(self, tag, attrs):
-        if tag != "input":
-            return
-        attrs = dict(attrs)
-        if (
-            attrs.get("type") == "checkbox"
-            and attrs.get("name") == "medio_pago"
-        ):
-            self.medios.add(attrs.get("value"))
-        if attrs.get("name", "").startswith("importe_"):
-            self.importes.add(attrs["name"])
+def items_iniciales(response):
+    return _json_script(response, "pos-initial-items")
 
 
 def items_enviados(response):
-    parser = _ItemsParser()
-    parser.feed(response.content.decode())
-    return json.loads(parser.value)
+    html = response.content.decode()
+    coincidencia = re.search(
+        r'id="items-input"\s+value="([^"]*)"', html, re.S
+    )
+    if not coincidencia:
+        return None
+    return json.loads(html_module.unescape(coincidencia.group(1)))
 
 
-def filas_del_carrito(response):
-    parser = _FilasCarritoParser()
-    parser.feed(response.content.decode())
-    return parser.filas
-
-
-def formularios_de_alta_desde_resultados(response):
-    parser = _FormulariosParser()
-    parser.feed(response.content.decode())
-    return [
-        formulario
-        for formulario in parser.formularios
-        if formulario["action"] == reverse("agregar_desde_resultados")
-    ]
-
-
-class PuntoDeVentaTests(TestCase):
+class CajaBaseTests(TestCase):
     def setUp(self):
         self.proveedor = Proveedor.objects.create(
             razon_social="Distribuidora SA",
             cuit="30-12345678-9",
         )
-        self.producto = Producto.objects.create(
+        self.almacen = Categoria.objects.create(nombre="Almacén")
+        self.bebidas = Categoria.objects.create(nombre="Bebidas")
+        self.yerba = Producto.objects.create(
             nombre="Yerba mate",
             stock=10,
+            stock_minimo=2,
             precio_venta=Decimal("1500.00"),
             costo=Decimal("1000.00"),
             codigo_barras="7791234567890",
             proveedor=self.proveedor,
         )
-        self.otro_producto = Producto.objects.create(
+        self.yerba.categorias.add(self.almacen)
+        self.cafe = Producto.objects.create(
             nombre="Café molido",
             stock=8,
+            stock_minimo=2,
             precio_venta=Decimal("2500.00"),
             costo=Decimal("1800.00"),
             codigo_barras="7791234567891",
             proveedor=self.proveedor,
         )
+        self.cafe.categorias.add(self.bebidas)
 
-    def test_pos_muestra_codigo_de_barras_carrito_vacio_y_medio_de_pago(self):
+    def datos_de_venta(self, items, pagos=()):
+        datos = {"items": json.dumps(items)}
+        if pagos:
+            datos["medio_pago"] = [medio for medio, _ in pagos]
+            for medio, importe in pagos:
+                datos[f"importe_{medio}"] = str(importe)
+        return datos
+
+
+class RaizTests(TestCase):
+    def test_la_raiz_lleva_a_la_caja(self):
+        response = self.client.get("/")
+
+        self.assertRedirects(response, reverse("pos"))
+
+
+class FormatoPesosTests(TestCase):
+    def test_formatea_miles_y_centavos_en_pesos(self):
+        self.assertEqual(pesos(Decimal("10540")), "$ 10.540")
+        self.assertEqual(pesos(Decimal("10540.50")), "$ 10.540,50")
+        self.assertEqual(pesos(Decimal("0")), "$ 0")
+        self.assertEqual(pesos(Decimal("-1234.50")), "-$ 1.234,50")
+
+
+class CajaTests(CajaBaseTests):
+    def test_caja_muestra_buscador_carrito_vacio_y_medios_de_pago(self):
         response = self.client.get(reverse("pos"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'name="codigo_barras"')
-        self.assertContains(response, 'name="items"')
-        self.assertContains(response, 'value="[]"')
+        self.assertContains(response, 'id="busqueda"')
+        self.assertContains(response, 'id="items-input"')
+        self.assertEqual(items_enviados(response), [])
+        self.assertEqual(items_iniciales(response), [])
         self.assertContains(response, "Carrito vacío")
-        self.assertContains(response, 'name="medio_pago"')
-        for medio in Pago.MedioPago:
-            self.assertContains(response, f'value="{medio.value}"')
+        self.assertContains(response, 'id="form-pago"')
 
-    def test_agregar_codigo_exacto_suma_el_producto_al_carrito(self):
-        response = self.client.post(
-            reverse("agregar_al_carrito"),
-            {
-                "codigo_barras": self.producto.codigo_barras,
-                "items": "[]",
-            },
+        medios = re.findall(
+            r'data-method="([A-Z]+)"', response.content.decode()
         )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, self.producto.nombre)
-        self.assertContains(response, f'data-producto-id="{self.producto.pk}"')
-        self.assertContains(response, 'data-cantidad="1"')
-        self.assertRegex(response.content.decode(), r"Total: \$ 1500[.,]00")
-        self.assertContains(response, 'name="codigo_barras"')
         self.assertEqual(
-            items_enviados(response),
-            [{"producto_id": self.producto.pk, "cantidad": 1}],
+            medios,
+            [
+                Pago.MedioPago.EFECTIVO.value,
+                Pago.MedioPago.TARJETA.value,
+                Pago.MedioPago.QR.value,
+                Pago.MedioPago.TRANSFERENCIA.value,
+            ],
         )
 
-    def test_agregar_el_mismo_producto_lo_acumula_en_una_sola_linea(self):
-        primera = self.client.post(
-            reverse("agregar_al_carrito"),
-            {
-                "codigo_barras": self.producto.codigo_barras,
-                "items": "[]",
-            },
-        )
-        items = items_enviados(primera)
-
-        response = self.client.post(
-            reverse("agregar_al_carrito"),
-            {
-                "codigo_barras": self.producto.codigo_barras,
-                "items": json.dumps(items),
-            },
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            items_enviados(response),
-            [{"producto_id": self.producto.pk, "cantidad": 2}],
-        )
-        self.assertContains(response, 'data-cantidad="2"')
-        self.assertEqual(
-            response.content.decode().count(
-                f'data-producto-id="{self.producto.pk}"'
-            ),
-            1,
-        )
-        self.assertRegex(response.content.decode(), r"Total: \$ 3000[.,]00")
-
-    def test_codigo_desconocido_muestra_no_encontrado_y_no_toca_el_carrito(
-        self,
-    ):
-        primera = self.client.post(
-            reverse("agregar_al_carrito"),
-            {
-                "codigo_barras": self.producto.codigo_barras,
-                "items": "[]",
-            },
-        )
-        items = items_enviados(primera)
-
-        response = self.client.post(
-            reverse("agregar_al_carrito"),
-            {
-                "codigo_barras": "0000000000000",
-                "items": json.dumps(items),
-            },
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Producto no encontrado")
-        self.assertContains(response, 'name="codigo_barras"')
-        self.assertEqual(items_enviados(response), items)
-        self.assertContains(response, 'data-cantidad="1"')
-        self.assertRegex(response.content.decode(), r"Total: \$ 1500[.,]00")
-
-    def test_codigo_de_producto_inactivo_muestra_no_encontrado_y_no_toca_el_carrito(
-        self,
-    ):
+    def test_caja_incluye_el_catalogo_activo_y_excluye_inactivos(self):
         inactivo = Producto.objects.create(
             nombre="Producto discontinuado",
             stock=5,
@@ -269,57 +128,91 @@ class PuntoDeVentaTests(TestCase):
             proveedor=self.proveedor,
             activo=False,
         )
-        primera = self.client.post(
-            reverse("agregar_al_carrito"),
-            {
-                "codigo_barras": self.producto.codigo_barras,
-                "items": "[]",
-            },
+
+        response = self.client.get(reverse("pos"))
+        catalogo = catalogo_enviado(response)
+
+        self.assertEqual(
+            {producto["nombre"] for producto in catalogo},
+            {"Yerba mate", "Café molido"},
         )
-        items = items_enviados(primera)
-
-        response = self.client.post(
-            reverse("agregar_al_carrito"),
-            {
-                "codigo_barras": inactivo.codigo_barras,
-                "items": json.dumps(items),
-            },
+        yerba = next(
+            producto
+            for producto in catalogo
+            if producto["id"] == self.yerba.pk
         )
+        self.assertEqual(yerba["precio"], "1500.00")
+        self.assertEqual(yerba["stock"], 10)
+        self.assertEqual(yerba["categoria_slug"], "almacen")
+        self.assertEqual(yerba["codigo"], self.yerba.codigo_barras)
 
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Producto no encontrado")
-        self.assertNotContains(response, inactivo.nombre)
-        self.assertEqual(items_enviados(response), items)
-        self.assertContains(response, 'data-cantidad="1"')
-        self.assertRegex(response.content.decode(), r"Total: \$ 1500[.,]00")
+        html = response.content.decode()
+        self.assertIn(f'data-product-id="{self.yerba.pk}"', html)
+        self.assertIn(f'data-product-id="{self.cafe.pk}"', html)
+        self.assertNotIn(f'data-product-id="{inactivo.pk}"', html)
+        self.assertNotIn("Producto discontinuado", html)
 
-    def test_registrar_venta_crea_venta_detalles_y_un_pago_por_el_total(
-        self,
-    ):
+    def test_caja_muestra_conteo_por_categoria_y_total(self):
+        response = self.client.get(reverse("pos"))
+        html = response.content.decode()
+
+        self.assertContains(response, 'data-cat="almacen"')
+        self.assertContains(response, 'data-cat="bebidas"')
+        self.assertRegex(
+            html,
+            r'data-cat="almacen"[\s\S]*?<span class="tab-count">1</span>',
+        )
+        self.assertRegex(
+            html,
+            r'data-cat="bebidas"[\s\S]*?<span class="tab-count">1</span>',
+        )
+        self.assertContains(response, ">2</span>")
+        self.assertContains(response, "Activá JavaScript")
+
+    def test_caja_muestra_el_precio_y_la_etiqueta_de_cada_producto(self):
+        response = self.client.get(reverse("pos"))
+
+        self.assertContains(response, pesos(self.yerba.precio_venta))
+        self.assertContains(response, pesos(self.cafe.precio_venta))
+        self.assertContains(
+            response,
+            f'aria-label="Agregar {self.yerba.nombre} al carrito"',
+        )
+        self.assertContains(response, 'title="Stock disponible: 10 unidades"')
+
+    def test_caja_incluye_la_barra_compacta_de_carrito(self):
+        response = self.client.get(reverse("pos"))
+
+        self.assertContains(response, 'id="mobile-cart-bar"')
+        self.assertContains(response, 'href="#carrito"')
+        self.assertContains(response, 'id="carrito"')
+
+
+class RegistrarVentaTests(CajaBaseTests):
+    def test_registrar_venta_crea_detalles_y_un_pago_por_el_total(self):
         items = [
-            {"producto_id": self.producto.pk, "cantidad": 2},
-            {"producto_id": self.otro_producto.pk, "cantidad": 1},
+            {"producto_id": self.yerba.pk, "cantidad": 2},
+            {"producto_id": self.cafe.pk, "cantidad": 1},
         ]
 
         response = self.client.post(
             reverse("registrar_venta"),
-            {
-                "items": json.dumps(items),
-                "medio_pago": Pago.MedioPago.EFECTIVO,
-            },
+            self.datos_de_venta(
+                items, [(Pago.MedioPago.EFECTIVO, "5500.00")]
+            ),
         )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse("pos"))
         self.assertEqual(Venta.objects.count(), 1)
+
         venta = Venta.objects.get()
         self.assertEqual(venta.detalles.count(), 2)
-
-        detalle_yerba = venta.detalles.get(producto=self.producto)
+        detalle_yerba = venta.detalles.get(producto=self.yerba)
         self.assertEqual(detalle_yerba.cantidad, 2)
         self.assertEqual(detalle_yerba.precio_unitario, Decimal("1500.00"))
         self.assertEqual(detalle_yerba.costo_unitario, Decimal("1000.00"))
-
-        detalle_cafe = venta.detalles.get(producto=self.otro_producto)
+        detalle_cafe = venta.detalles.get(producto=self.cafe)
         self.assertEqual(detalle_cafe.cantidad, 1)
         self.assertEqual(detalle_cafe.precio_unitario, Decimal("2500.00"))
         self.assertEqual(detalle_cafe.costo_unitario, Decimal("1800.00"))
@@ -328,31 +221,40 @@ class PuntoDeVentaTests(TestCase):
         pago = venta.pagos.get()
         self.assertEqual(pago.medio_pago, Pago.MedioPago.EFECTIVO)
         self.assertEqual(pago.importe, Decimal("5500.00"))
-        self.assertEqual(venta.monto_total, Decimal("5500.00"))
+        self.assertEqual(venta.total_pagado, Decimal("5500.00"))
 
-    def test_registrar_venta_con_varios_medios_guarda_un_pago_por_medio_con_su_importe(
-        self,
-    ):
-        items = [
-            {"producto_id": self.producto.pk, "cantidad": 2},
-            {"producto_id": self.otro_producto.pk, "cantidad": 1},
-        ]
+        self.yerba.refresh_from_db()
+        self.cafe.refresh_from_db()
+        self.assertEqual(self.yerba.stock, 8)
+        self.assertEqual(self.cafe.stock, 7)
+
+        page = self.client.get(reverse("pos"))
+        self.assertContains(page, f"Venta N°{venta.pk}")
+        self.assertContains(page, 'id="sale-success"')
+        self.assertContains(page, "Cobrada")
+        self.assertContains(page, pesos(Decimal("5500.00")))
+        self.assertContains(page, "Efectivo")
+        self.assertContains(page, 'class="success-lines"')
+        self.assertContains(page, "2×")
+        self.assertContains(page, "1×")
+        self.assertContains(page, pesos(Decimal("3000.00")))
+        self.assertEqual(items_enviados(page), [])
+
+    def test_registrar_venta_con_varios_medios_guarda_cada_importe(self):
+        items = [{"producto_id": self.yerba.pk, "cantidad": 2}]
 
         response = self.client.post(
             reverse("registrar_venta"),
-            {
-                "items": json.dumps(items),
-                "medio_pago": [
-                    Pago.MedioPago.EFECTIVO,
-                    Pago.MedioPago.TARJETA,
+            self.datos_de_venta(
+                items,
+                [
+                    (Pago.MedioPago.EFECTIVO, "2000.00"),
+                    (Pago.MedioPago.TARJETA, "1000.00"),
                 ],
-                "importe_EFECTIVO": "3000.00",
-                "importe_TARJETA": "2500.00",
-            },
+            ),
         )
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(Venta.objects.count(), 1)
+        self.assertEqual(response.status_code, 302)
         venta = Venta.objects.get()
         self.assertEqual(
             {
@@ -360,648 +262,191 @@ class PuntoDeVentaTests(TestCase):
                 for pago in venta.pagos.all()
             },
             {
-                Pago.MedioPago.EFECTIVO: Decimal("3000.00"),
-                Pago.MedioPago.TARJETA: Decimal("2500.00"),
+                Pago.MedioPago.EFECTIVO: Decimal("2000.00"),
+                Pago.MedioPago.TARJETA: Decimal("1000.00"),
             },
         )
-        self.assertEqual(venta.total_pagado, Decimal("5500.00"))
         self.assertEqual(venta.monto_restante, Decimal("0.00"))
 
-    def test_registrar_venta_con_importes_que_no_suman_el_total_avisa_y_no_registra_nada(
-        self,
-    ):
+        page = self.client.get(reverse("pos"))
+        self.assertContains(page, "Efectivo")
+        self.assertContains(page, "Tarjeta")
+        self.assertContains(page, pesos(Decimal("2000.00")))
+        self.assertContains(page, pesos(Decimal("1000.00")))
+
+    def test_el_ticket_abrevia_transferencia_sin_perder_la_etiqueta(self):
+        items = [{"producto_id": self.yerba.pk, "cantidad": 1}]
+
+        self.client.post(
+            reverse("registrar_venta"),
+            self.datos_de_venta(
+                items, [(Pago.MedioPago.TRANSFERENCIA, "1500.00")]
+            ),
+        )
+        page = self.client.get(reverse("pos"))
+
+        self.assertContains(page, "Transf.")
+        self.assertContains(page, "Pagos: Transferencia")
+
+    def test_registrar_venta_sin_importe_asigna_el_total_al_unico_medio(self):
+        items = [{"producto_id": self.yerba.pk, "cantidad": 1}]
+        datos = {
+            "items": json.dumps(items),
+            "medio_pago": Pago.MedioPago.QR.value,
+        }
+
+        response = self.client.post(reverse("registrar_venta"), datos)
+
+        self.assertEqual(response.status_code, 302)
+        pago = Pago.objects.get()
+        self.assertEqual(pago.importe, Decimal("1500.00"))
+
+    def test_importes_que_no_suman_el_total_no_registran_nada(self):
         items = [
-            {"producto_id": self.producto.pk, "cantidad": 2},
-            {"producto_id": self.otro_producto.pk, "cantidad": 1},
+            {"producto_id": self.yerba.pk, "cantidad": 2},
+            {"producto_id": self.cafe.pk, "cantidad": 1},
         ]
 
         response = self.client.post(
             reverse("registrar_venta"),
-            {
-                "items": json.dumps(items),
-                "medio_pago": [
-                    Pago.MedioPago.EFECTIVO,
-                    Pago.MedioPago.TARJETA,
+            self.datos_de_venta(
+                items,
+                [
+                    (Pago.MedioPago.EFECTIVO, "3000.00"),
+                    (Pago.MedioPago.TARJETA, "2000.00"),
                 ],
-                "importe_EFECTIVO": "3000.00",
-                "importe_TARJETA": "2000.00",
-            },
+            ),
         )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 302)
+        page = self.client.get(reverse("pos"))
         self.assertContains(
-            response,
+            page,
             "Los importes deben sumar exactamente el total de la venta",
         )
+        self.assertEqual(items_enviados(page), items)
         self.assertEqual(Venta.objects.count(), 0)
         self.assertEqual(DetalleVenta.objects.count(), 0)
         self.assertEqual(Pago.objects.count(), 0)
-        self.producto.refresh_from_db()
-        self.otro_producto.refresh_from_db()
-        self.assertEqual(self.producto.stock, 10)
-        self.assertEqual(self.otro_producto.stock, 8)
 
-    def test_registrar_venta_descuenta_el_stock_de_cada_producto(self):
-        items = [
-            {"producto_id": self.producto.pk, "cantidad": 2},
-            {"producto_id": self.otro_producto.pk, "cantidad": 1},
-        ]
-
-        response = self.client.post(
-            reverse("registrar_venta"),
-            {
-                "items": json.dumps(items),
-                "medio_pago": Pago.MedioPago.TARJETA,
-            },
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.producto.refresh_from_db()
-        self.otro_producto.refresh_from_db()
-        self.assertEqual(self.producto.stock, 8)
-        self.assertEqual(self.otro_producto.stock, 7)
-
-    def test_registrar_venta_deja_stock_en_cero_si_la_cantidad_supera_el_disponible(
-        self,
-    ):
-        self.producto.stock = 1
-        self.producto.save(update_fields=["stock"])
-        items = [{"producto_id": self.producto.pk, "cantidad": 3}]
-
-        response = self.client.post(
-            reverse("registrar_venta"),
-            {
-                "items": json.dumps(items),
-                "medio_pago": Pago.MedioPago.QR,
-            },
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.producto.refresh_from_db()
-        self.assertEqual(self.producto.stock, 0)
-
-        venta = Venta.objects.get()
-        detalle = venta.detalles.get()
-        self.assertEqual(detalle.cantidad, 3)
-
-    def test_registrar_venta_muestra_el_numero_y_deja_el_carrito_vacio(self):
-        items = [{"producto_id": self.producto.pk, "cantidad": 1}]
-
-        response = self.client.post(
-            reverse("registrar_venta"),
-            {
-                "items": json.dumps(items),
-                "medio_pago": Pago.MedioPago.EFECTIVO,
-            },
-        )
-
-        venta = Venta.objects.get()
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, f"Venta N°{venta.pk}")
-        self.assertContains(response, "Carrito vacío")
-        self.assertEqual(items_enviados(response), [])
-        self.assertNotContains(response, self.producto.nombre)
-        self.assertContains(response, 'name="codigo_barras"')
+        self.yerba.refresh_from_db()
+        self.cafe.refresh_from_db()
+        self.assertEqual(self.yerba.stock, 10)
+        self.assertEqual(self.cafe.stock, 8)
 
     def test_registrar_sin_productos_avisa_y_no_crea_venta(self):
         response = self.client.post(
             reverse("registrar_venta"),
             {
                 "items": "[]",
-                "medio_pago": Pago.MedioPago.EFECTIVO,
+                "medio_pago": Pago.MedioPago.EFECTIVO.value,
             },
         )
 
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Agregá al menos un producto")
-        self.assertContains(response, "Carrito vacío")
+        self.assertEqual(response.status_code, 302)
+        page = self.client.get(reverse("pos"))
+        self.assertContains(page, "Agregá al menos un producto")
+        self.assertContains(page, "Carrito vacío")
         self.assertEqual(Venta.objects.count(), 0)
         self.assertEqual(Pago.objects.count(), 0)
 
-    def test_registrar_sin_medio_de_pago_avisa_y_no_crea_venta(self):
-        items = [{"producto_id": self.producto.pk, "cantidad": 1}]
+    def test_registrar_sin_medio_de_pago_avisa_y_conserva_el_carrito(self):
+        items = [{"producto_id": self.yerba.pk, "cantidad": 1}]
 
         response = self.client.post(
             reverse("registrar_venta"),
             {"items": json.dumps(items)},
         )
 
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Elegí un medio de pago")
+        self.assertEqual(response.status_code, 302)
+        page = self.client.get(reverse("pos"))
+        self.assertContains(page, "Elegí un medio de pago")
+        self.assertEqual(items_enviados(page), items)
         self.assertEqual(Venta.objects.count(), 0)
         self.assertEqual(Pago.objects.count(), 0)
 
-
-class CarritoEnPantallaTests(TestCase):
-    def setUp(self):
-        proveedor = Proveedor.objects.create(
-            razon_social="Distribuidora SA",
-            cuit="30-12345678-9",
-        )
-        self.yerba = Producto.objects.create(
-            nombre="Yerba mate",
-            stock=10,
-            precio_venta=Decimal("1500.00"),
-            costo=Decimal("1000.00"),
-            codigo_barras="7791234567890",
-            proveedor=proveedor,
-        )
-        self.cafe = Producto.objects.create(
-            nombre="Café molido",
-            stock=8,
-            precio_venta=Decimal("2500.00"),
-            costo=Decimal("1800.00"),
-            codigo_barras="7791234567891",
-            proveedor=proveedor,
-        )
-
-    def test_carrito_muestra_nombre_cantidad_precio_unitario_e_importe_de_cada_linea(
+    def test_registrar_venta_deja_stock_en_cero_si_supera_el_disponible(
         self,
     ):
-        items = [
-            {"producto_id": self.yerba.pk, "cantidad": 2},
-            {"producto_id": self.cafe.pk, "cantidad": 3},
-        ]
-
-        response = self.client.post(
-            reverse("buscar_productos"),
-            {"nombre": "", "items": json.dumps(items)},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Precio unitario")
-        self.assertContains(response, "Importe")
-        self.assertEqual(
-            filas_del_carrito(response),
-            {
-                str(self.yerba.pk): [
-                    "Yerba mate",
-                    "2",
-                    "$ 1500,00",
-                    "$ 3000,00",
-                ],
-                str(self.cafe.pk): [
-                    "Café molido",
-                    "3",
-                    "$ 2500,00",
-                    "$ 7500,00",
-                ],
-            },
-        )
-
-    def test_total_del_carrito_es_la_suma_de_los_importes_de_las_lineas(
-        self,
-    ):
-        items = [
-            {"producto_id": self.yerba.pk, "cantidad": 2},
-            {"producto_id": self.cafe.pk, "cantidad": 3},
-        ]
-
-        response = self.client.post(
-            reverse("buscar_productos"),
-            {"nombre": "", "items": json.dumps(items)},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Total: $ 10500,00")
-
-    def test_actualizar_cantidad_recalcula_el_importe_de_la_linea_y_el_total(
-        self,
-    ):
-        items = [
-            {"producto_id": self.yerba.pk, "cantidad": 2},
-            {"producto_id": self.cafe.pk, "cantidad": 1},
-        ]
-
-        response = self.client.post(
-            reverse("actualizar_cantidad"),
-            {
-                "items": json.dumps(items),
-                "producto_id": self.yerba.pk,
-                "cantidad": 3,
-            },
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            items_enviados(response),
-            [
-                {"producto_id": self.yerba.pk, "cantidad": 3},
-                {"producto_id": self.cafe.pk, "cantidad": 1},
-            ],
-        )
-        self.assertContains(response, 'data-cantidad="3"')
-        self.assertContains(response, 'data-cantidad="1"')
-        self.assertContains(response, "$ 4500,00")
-        self.assertContains(response, "$ 2500,00")
-        self.assertContains(response, "Total: $ 7000,00")
-
-    def test_quitar_un_producto_elimina_su_linea_y_recalcula_el_total(self):
-        items = [
-            {"producto_id": self.yerba.pk, "cantidad": 2},
-            {"producto_id": self.cafe.pk, "cantidad": 1},
-        ]
-
-        response = self.client.post(
-            reverse("quitar_del_carrito"),
-            {
-                "items": json.dumps(items),
-                "producto_id": self.yerba.pk,
-            },
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            items_enviados(response),
-            [{"producto_id": self.cafe.pk, "cantidad": 1}],
-        )
-        self.assertNotContains(
-            response,
-            f'data-producto-id="{self.yerba.pk}"',
-        )
-        self.assertContains(
-            response,
-            f'data-producto-id="{self.cafe.pk}"',
-        )
-        self.assertContains(response, "Total: $ 2500,00")
-
-    def test_quitar_el_unico_producto_muestra_el_carrito_vacio(self):
-        items = [{"producto_id": self.cafe.pk, "cantidad": 1}]
-
-        response = self.client.post(
-            reverse("quitar_del_carrito"),
-            {
-                "items": json.dumps(items),
-                "producto_id": self.cafe.pk,
-            },
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(items_enviados(response), [])
-        self.assertContains(response, "Carrito vacío")
-        self.assertNotContains(
-            response,
-            f'data-producto-id="{self.cafe.pk}"',
-        )
-        self.assertNotContains(response, "Total")
-
-    def test_actualizar_cantidad_por_encima_del_stock_se_acepta(self):
         self.yerba.stock = 1
         self.yerba.save(update_fields=["stock"])
-        items = [{"producto_id": self.yerba.pk, "cantidad": 2}]
+        items = [{"producto_id": self.yerba.pk, "cantidad": 3}]
 
         response = self.client.post(
-            reverse("actualizar_cantidad"),
-            {
-                "items": json.dumps(items),
-                "producto_id": self.yerba.pk,
-                "cantidad": 5,
-            },
+            reverse("registrar_venta"),
+            self.datos_de_venta(
+                items, [(Pago.MedioPago.EFECTIVO, "4500.00")]
+            ),
         )
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            items_enviados(response),
-            [{"producto_id": self.yerba.pk, "cantidad": 5}],
-        )
-        self.assertContains(response, 'data-cantidad="5"')
-        self.assertContains(response, "Total: $ 7500,00")
+        self.assertEqual(response.status_code, 302)
+        self.yerba.refresh_from_db()
+        self.assertEqual(self.yerba.stock, 0)
+        self.assertEqual(Venta.objects.get().detalles.get().cantidad, 3)
 
-    def test_cada_linea_del_carrito_ofrece_cantidad_y_acciones_de_actualizar_y_quitar(
-        self,
-    ):
+    def test_la_confirmacion_se_muestra_una_sola_vez(self):
+        items = [{"producto_id": self.yerba.pk, "cantidad": 1}]
+        self.client.post(
+            reverse("registrar_venta"),
+            self.datos_de_venta(
+                items, [(Pago.MedioPago.EFECTIVO, "1500.00")]
+            ),
+        )
+        venta = Venta.objects.get()
+
+        primera = self.client.get(reverse("pos"))
+        segunda = self.client.get(reverse("pos"))
+
+        self.assertContains(primera, f"Venta N°{venta.pk}")
+        self.assertNotContains(segunda, f"Venta N°{venta.pk}")
+        self.assertEqual(Venta.objects.count(), 1)
+
+
+class CarritoRestauradoTests(CajaBaseTests):
+    def test_un_error_devuelve_las_lineas_y_los_totales_del_carrito(self):
         items = [
             {"producto_id": self.yerba.pk, "cantidad": 2},
-            {"producto_id": self.cafe.pk, "cantidad": 3},
+            {"producto_id": self.cafe.pk, "cantidad": 1},
         ]
 
         response = self.client.post(
-            reverse("buscar_productos"),
-            {"nombre": "", "items": json.dumps(items)},
+            reverse("registrar_venta"),
+            self.datos_de_venta(items),
         )
 
-        parser = _FormulariosParser()
-        parser.feed(response.content.decode())
-        formularios = [
-            formulario
-            for formulario in parser.formularios
-            if formulario["action"] == reverse("actualizar_cantidad")
-        ]
+        self.assertEqual(response.status_code, 302)
+        page = self.client.get(reverse("pos"))
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(formularios), 2)
-        self.assertEqual(
-            {
-                formulario["campos"]["producto_id"]: formulario["campos"][
-                    "cantidad"
-                ]
-                for formulario in formularios
-            },
-            {
-                str(self.yerba.pk): "2",
-                str(self.cafe.pk): "3",
-            },
-        )
-        for formulario in formularios:
-            self.assertEqual(
-                json.loads(formulario["campos"]["items"]),
-                items,
-            )
-            self.assertIn("Actualizar", formulario["botones"])
-            self.assertIn("Quitar", formulario["botones"])
-            self.assertEqual(
-                formulario["formactions"]["Quitar"],
-                reverse("quitar_del_carrito"),
-            )
-
-    def test_carrito_vacio_no_muestra_lineas_ni_total(self):
-        response = self.client.get(reverse("pos"))
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Carrito vacío")
-        self.assertNotContains(response, "<table")
-        self.assertNotContains(response, "Total")
-
-    def test_pos_muestra_casillas_y_un_importe_por_medio_de_pago(self):
-        items = [{"producto_id": self.yerba.pk, "cantidad": 2}]
-
-        response = self.client.post(
-            reverse("buscar_productos"),
-            {"nombre": "", "items": json.dumps(items)},
+        self.assertContains(page, "Elegí un medio de pago")
+        self.assertEqual(items_enviados(page), items)
+        self.assertEqual(items_iniciales(page), items)
+        self.assertContains(page, f'data-producto-id="{self.yerba.pk}"')
+        self.assertContains(page, f'data-producto-id="{self.cafe.pk}"')
+        self.assertContains(page, 'data-cantidad="2"')
+        self.assertContains(page, 'data-cantidad="1"')
+        self.assertContains(page, f"{pesos(Decimal('1500.00'))} c/u")
+        self.assertContains(page, pesos(Decimal("3000.00")))
+        self.assertContains(page, pesos(Decimal("2500.00")))
+        self.assertContains(page, pesos(Decimal("5500.00")))
+        self.assertContains(
+            page,
+            "Escaneá un código o elegí un producto del catálogo",
+            count=None,
         )
 
-        parser = _CamposDePagoParser()
-        parser.feed(response.content.decode())
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            parser.medios,
-            {medio.value for medio in Pago.MedioPago},
-        )
-        self.assertEqual(
-            parser.importes,
-            {f"importe_{medio.value}" for medio in Pago.MedioPago},
-        )
-
-
-class BusquedaDeProductosTests(TestCase):
-    def setUp(self):
-        proveedor = Proveedor.objects.create(
-            razon_social="Distribuidora SA",
-            cuit="30-12345678-9",
-        )
-        self.yerba = Producto.objects.create(
-            nombre="Yerba mate",
-            stock=10,
-            precio_venta=Decimal("1500.00"),
-            costo=Decimal("1000.00"),
-            codigo_barras="7791234567890",
-            proveedor=proveedor,
-        )
-        self.cafe = Producto.objects.create(
-            nombre="Café molido",
-            stock=8,
-            precio_venta=Decimal("2500.00"),
-            costo=Decimal("1800.00"),
-            codigo_barras="7791234567891",
-            proveedor=proveedor,
-        )
-
-    def test_busqueda_por_parte_del_nombre_muestra_coincidencias_con_precio(
-        self,
-    ):
-        response = self.client.post(
-            reverse("buscar_productos"),
-            {"nombre": "yer", "items": "[]"},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'name="nombre"')
-        self.assertContains(response, self.yerba.nombre)
-        self.assertRegex(response.content.decode(), r"1500[.,]00")
-        self.assertNotContains(response, self.cafe.nombre)
-
-    def test_busqueda_ignora_mayusculas_y_tildes(self):
-        response = self.client.post(
-            reverse("buscar_productos"),
-            {"nombre": "CAFE", "items": "[]"},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, self.cafe.nombre)
-        self.assertNotContains(response, self.yerba.nombre)
-
-        response = self.client.post(
-            reverse("buscar_productos"),
-            {"nombre": "YÉRBA", "items": "[]"},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, self.yerba.nombre)
-        self.assertNotContains(response, self.cafe.nombre)
-
-    def test_busqueda_no_muestra_productos_inactivos(self):
-        inactivo = Producto.objects.create(
-            nombre="Yerba mate descartada",
-            stock=5,
-            precio_venta=Decimal("100.00"),
-            costo=Decimal("50.00"),
-            codigo_barras="7790000000002",
-            proveedor=self.yerba.proveedor,
-            activo=False,
-        )
-
-        response = self.client.post(
-            reverse("buscar_productos"),
-            {"nombre": "yerba", "items": "[]"},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, self.yerba.nombre)
-        self.assertNotContains(response, inactivo.nombre)
-
-    def test_busqueda_conserva_el_carrito_y_el_total(self):
-        items = [{"producto_id": self.yerba.pk, "cantidad": 2}]
-
-        response = self.client.post(
-            reverse("buscar_productos"),
-            {"nombre": "cafe", "items": json.dumps(items)},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(items_enviados(response), items)
-        self.assertContains(response, f'data-producto-id="{self.yerba.pk}"')
-        self.assertContains(response, 'data-cantidad="2"')
-        self.assertRegex(response.content.decode(), r"Total: \$ 3000[.,]00")
-
-    def test_resultados_muestran_un_boton_agregar_por_producto(self):
-        items = [{"producto_id": self.cafe.pk, "cantidad": 2}]
-
-        response = self.client.post(
-            reverse("buscar_productos"),
-            {"nombre": "a", "items": json.dumps(items)},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        formularios = formularios_de_alta_desde_resultados(response)
-        self.assertEqual(len(formularios), 2)
-        self.assertEqual(
-            {formulario["campos"]["producto_id"] for formulario in formularios},
-            {str(self.yerba.pk), str(self.cafe.pk)},
-        )
-        for formulario in formularios:
-            self.assertEqual(
-                json.loads(formulario["campos"]["items"]),
-                items,
-            )
-            self.assertEqual(formulario["campos"]["nombre"], "a")
-            self.assertIn("Agregar", formulario["botones"])
-
-    def test_busqueda_sin_resultados_avisa_y_conserva_el_carrito(self):
+    def test_el_aviso_de_error_se_muestra_una_sola_vez(self):
         items = [{"producto_id": self.yerba.pk, "cantidad": 1}]
-
-        response = self.client.post(
-            reverse("buscar_productos"),
-            {"nombre": "zzz", "items": json.dumps(items)},
+        self.client.post(
+            reverse("registrar_venta"),
+            {"items": json.dumps(items)},
         )
 
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "No se encontraron productos")
-        self.assertEqual(items_enviados(response), items)
-        self.assertContains(response, f'data-producto-id="{self.yerba.pk}"')
-        self.assertRegex(response.content.decode(), r"Total: \$ 1500[.,]00")
+        primera = self.client.get(reverse("pos"))
+        segunda = self.client.get(reverse("pos"))
 
-    def test_busqueda_vacia_no_muestra_aviso_ni_resultados(self):
-        for termino in ("", "   "):
-            response = self.client.post(
-                reverse("buscar_productos"),
-                {"nombre": termino, "items": "[]"},
-            )
-
-            self.assertEqual(response.status_code, 200)
-            self.assertNotContains(response, "No se encontraron productos")
-            self.assertNotContains(response, "Resultados")
-            self.assertNotContains(response, self.yerba.nombre)
-            self.assertNotContains(response, self.cafe.nombre)
-
-
-class AgregarDesdeResultadosTests(TestCase):
-    def setUp(self):
-        proveedor = Proveedor.objects.create(
-            razon_social="Distribuidora SA",
-            cuit="30-12345678-9",
-        )
-        self.yerba = Producto.objects.create(
-            nombre="Yerba mate",
-            stock=10,
-            precio_venta=Decimal("1500.00"),
-            costo=Decimal("1000.00"),
-            codigo_barras="7791234567890",
-            proveedor=proveedor,
-        )
-        self.cafe = Producto.objects.create(
-            nombre="Café molido",
-            stock=8,
-            precio_venta=Decimal("2500.00"),
-            costo=Decimal("1800.00"),
-            codigo_barras="7791234567891",
-            proveedor=proveedor,
-        )
-
-    def test_agregar_desde_resultados_agrega_el_producto_con_cantidad_uno_y_actualiza_el_total(
-        self,
-    ):
-        response = self.client.post(
-            reverse("agregar_desde_resultados"),
-            {
-                "producto_id": self.yerba.pk,
-                "items": "[]",
-                "nombre": "yer",
-            },
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            items_enviados(response),
-            [{"producto_id": self.yerba.pk, "cantidad": 1}],
-        )
-        self.assertContains(response, f'data-producto-id="{self.yerba.pk}"')
-        self.assertContains(response, 'data-cantidad="1"')
-        self.assertRegex(response.content.decode(), r"Total: \$ 1500[.,]00")
-
-    def test_agregar_desde_resultados_suma_una_unidad_sin_duplicar_la_linea(
-        self,
-    ):
-        primera = self.client.post(
-            reverse("agregar_desde_resultados"),
-            {
-                "producto_id": self.yerba.pk,
-                "items": "[]",
-                "nombre": "yer",
-            },
-        )
-        items = items_enviados(primera)
-
-        response = self.client.post(
-            reverse("agregar_desde_resultados"),
-            {
-                "producto_id": self.yerba.pk,
-                "items": json.dumps(items),
-                "nombre": "yer",
-            },
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            items_enviados(response),
-            [{"producto_id": self.yerba.pk, "cantidad": 2}],
-        )
-        self.assertContains(response, 'data-cantidad="2"')
-        self.assertEqual(
-            response.content.decode().count(
-                f'data-producto-id="{self.yerba.pk}"'
-            ),
-            1,
-        )
-        self.assertRegex(response.content.decode(), r"Total: \$ 3000[.,]00")
-
-    def test_agregar_desde_resultados_conserva_los_resultados_y_el_resto_del_carrito(
-        self,
-    ):
-        items = [{"producto_id": self.cafe.pk, "cantidad": 2}]
-
-        response = self.client.post(
-            reverse("agregar_desde_resultados"),
-            {
-                "producto_id": self.yerba.pk,
-                "items": json.dumps(items),
-                "nombre": "yer",
-            },
-        )
-
-        items_esperados = [
-            {"producto_id": self.cafe.pk, "cantidad": 2},
-            {"producto_id": self.yerba.pk, "cantidad": 1},
-        ]
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(items_enviados(response), items_esperados)
-        self.assertContains(response, f'data-producto-id="{self.cafe.pk}"')
-        self.assertContains(response, 'data-cantidad="2"')
-        self.assertContains(response, f'data-producto-id="{self.yerba.pk}"')
-        self.assertContains(response, 'data-cantidad="1"')
-        self.assertRegex(response.content.decode(), r"Total: \$ 6500[.,]00")
-
-        formularios = formularios_de_alta_desde_resultados(response)
-        self.assertEqual(len(formularios), 1)
-        self.assertEqual(
-            formularios[0]["campos"]["producto_id"],
-            str(self.yerba.pk),
-        )
-        self.assertEqual(formularios[0]["campos"]["nombre"], "yer")
-        self.assertEqual(
-            json.loads(formularios[0]["campos"]["items"]),
-            items_esperados,
-        )
+        self.assertContains(primera, "Elegí un medio de pago")
+        self.assertNotContains(segunda, "Elegí un medio de pago")
+        self.assertEqual(items_enviados(segunda), [])
 
 
 class DetalleVentaAdminTests(TestCase):
