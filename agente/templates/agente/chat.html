@@ -1,39 +1,124 @@
-<!doctype html>
-<html lang="es">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Asistente de PosIA</title>
-</head>
-<body>
-    <main>
-        <h1>Asistente comercial</h1>
+{% extends "base.html" %}
+{% load static %}
 
-        <form method="post">
-            {% csrf_token %}
+{% block title %}Asistente comercial · PosIA{% endblock %}
+{% block body_class %}page-assistant{% endblock %}
 
-            <label for="pregunta">¿Qué querés consultar?</label>
-            <textarea
-                id="pregunta"
-                name="pregunta"
-                rows="3"
-                maxlength="1000"
-                required
-            >{{ pregunta }}</textarea>
+{% block head %}
+    <script src="{% static 'posia/js/agente.js' %}" defer></script>
+{% endblock %}
 
-            <button type="submit">Consultar</button>
-        </form>
+{% block content %}
+<div class="page">
+    <div class="page-inner">
+        <header class="page-head">
+            <div>
+                <h1 class="page-title">Asistente comercial</h1>
+                <p class="page-sub">
+                    Preguntá por stock, ventas, rotación o rentabilidad. El
+                    asistente consulta la base del POS y responde con datos
+                    verificables.
+                </p>
+            </div>
+        </header>
 
-        {% if error %}
-            <p role="alert">{{ error }}</p>
-        {% endif %}
+        <div class="assistant-grid">
+            <aside class="panel suggestions" id="consultas"
+                   aria-labelledby="sugerencias-title">
+                <h2 id="sugerencias-title" class="panel-title">Consultas rápidas</h2>
+                <div class="suggestion-list">
+                    {% for consulta in consultas %}
+                        <button class="suggestion-item" type="button"
+                                data-pregunta="{{ consulta.pregunta }}">
+                            <span class="suggestion-icon" aria-hidden="true">
+                                <svg class="icon"><use href="#{{ consulta.icono }}"></use></svg>
+                            </span>
+                            <span class="suggestion-text">
+                                <span class="suggestion-title">{{ consulta.titulo }}</span>
+                                <span class="suggestion-query">{{ consulta.pregunta }}</span>
+                            </span>
+                        </button>
+                    {% endfor %}
+                </div>
+                <p class="panel-note">
+                    <svg class="icon" aria-hidden="true"><use href="#i-shield"></use></svg>
+                    <span>
+                        Solo lectura sobre la base del POS. No inventa datos,
+                        no usa internet y no modifica registros.
+                    </span>
+                </p>
+            </aside>
 
-        {% if respuesta %}
-            <section aria-live="polite">
-                <h2>Respuesta</h2>
-                <p>{{ respuesta }}</p>
-            </section>
-        {% endif %}
-    </main>
-</body>
-</html>
+            <div class="assistant-main">
+                <section class="panel composer-card" aria-labelledby="pregunta-title">
+                    <h2 id="pregunta-title" class="sr-only">Hacer una consulta</h2>
+                    <form method="post" id="form-agente">
+                        {% csrf_token %}
+                        <label class="composer-label" for="pregunta">Tu consulta</label>
+                        <textarea id="pregunta" name="pregunta" rows="4"
+                                  maxlength="1000" required class="ask-input"
+                                  placeholder="Ej.: ¿Cuánto vendí esta semana?">{{ pregunta }}</textarea>
+                        <div class="composer-foot">
+                            <span class="char-count" id="char-count">
+                                {{ pregunta|length }} / 1000
+                            </span>
+                            <button class="btn btn--primary" type="submit">
+                                <span>Consultar</span>
+                                <svg class="icon icon--sm" aria-hidden="true"><use href="#i-sparkles"></use></svg>
+                            </button>
+                        </div>
+                        <p class="composer-hint">
+                            <svg class="icon" aria-hidden="true"><use href="#i-shield"></use></svg>
+                            Pesos argentinos · hora de Buenos Aires
+                        </p>
+                        <p class="composer-status" id="agente-status"
+                           role="status" hidden>
+                            Consultando la base del POS…
+                        </p>
+                    </form>
+                </section>
+
+                {% if error %}
+                    <div class="notice notice--error" role="alert">
+                        <svg class="icon" aria-hidden="true"><use href="#i-alert"></use></svg>
+                        <p>{{ error }}</p>
+                    </div>
+                {% endif %}
+
+                {% if respuesta %}
+                    <section class="panel answer-card" aria-labelledby="respuesta-title">
+                        <div class="answer-head">
+                            <div class="answer-title">
+                                <svg class="icon icon--sm" aria-hidden="true"><use href="#i-sparkles"></use></svg>
+                                <h2 id="respuesta-title">Respuesta</h2>
+                                <span class="answer-badge">Datos del POS</span>
+                            </div>
+                            <button class="btn btn--ghost btn--sm" type="button"
+                                    id="copy-answer">
+                                <svg class="icon icon--sm" aria-hidden="true"><use href="#i-copy"></use></svg>
+                                <span>Copiar</span>
+                            </button>
+                        </div>
+                        {% if pregunta_respondida %}
+                            <p class="answer-question">{{ pregunta_respondida }}</p>
+                        {% endif %}
+                        <div class="answer-body" id="answer-body">
+                            {{ respuesta|linebreaks }}
+                        </div>
+                    </section>
+                {% else %}
+                    <div class="answer-placeholder">
+                        <svg class="icon" aria-hidden="true"><use href="#i-chart"></use></svg>
+                        <p class="empty-title">La respuesta aparece acá</p>
+                        <p class="empty-copy">
+                            El asistente consulta stock, ventas, comparación,
+                            cobertura y rentabilidad de tu base. Cada respuesta
+                            sale de una consulta autorizada.
+                        </p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

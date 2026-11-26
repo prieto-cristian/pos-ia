@@ -1,0 +1,120 @@
+<aside class="sidebar" id="sidebar" aria-label="Navegación principal">
+    <div class="sidebar-top">
+        <a class="brand" href="{% url 'pos' %}">
+            <span class="brand-mark" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round"
+                     stroke-linejoin="round">
+                    <path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3z"/>
+                    <path d="M9 8h6M9 12h6"/>
+                </svg>
+            </span>
+            <span class="brand-text">
+                <span class="brand-name">PosIA</span>
+                <span class="brand-sub">Punto de venta</span>
+            </span>
+        </a>
+        <button class="sidebar-close" type="button" data-sidebar-close
+                aria-label="Cerrar navegación">
+            <svg class="icon" aria-hidden="true"><use href="#i-x"></use></svg>
+        </button>
+    </div>
+
+    <nav class="nav">
+        <div class="nav-group">
+            <p class="nav-label">Operación</p>
+            <a class="nav-item {% if nav_activo == 'caja' %}is-active{% endif %}"
+               href="{% url 'pos' %}"
+               {% if nav_activo == 'caja' %}aria-current="page"{% endif %}>
+                <svg class="icon" aria-hidden="true"><use href="#i-scan"></use></svg>
+                <span>Caja</span>
+            </a>
+            <a class="nav-item {% if nav_activo == 'asistente' %}is-active{% endif %}"
+               href="{% url 'agente:chat' %}"
+               {% if nav_activo == 'asistente' %}aria-current="page"{% endif %}>
+                <svg class="icon" aria-hidden="true"><use href="#i-sparkles"></use></svg>
+                <span>Asistente</span>
+            </a>
+            <a class="nav-item {% if nav_activo == 'chat' %}is-active{% endif %}"
+               href="{% url 'chat' %}"
+               {% if nav_activo == 'chat' %}aria-current="page"{% endif %}>
+                <svg class="icon" aria-hidden="true"><use href="#i-chat"></use></svg>
+                <span>Chat</span>
+            </a>
+        </div>
+
+        <div class="nav-group">
+            <p class="nav-label">Gestión</p>
+            <a class="nav-item nav-item--external"
+               href="{% url 'admin:productos_producto_changelist' %}">
+                <svg class="icon" aria-hidden="true"><use href="#i-box"></use></svg>
+                <span>Productos</span>
+                <svg class="icon nav-external" aria-hidden="true"><use href="#i-arrow-up-right"></use></svg>
+            </a>
+            <a class="nav-item nav-item--external"
+               href="{% url 'admin:ventas_venta_changelist' %}">
+                <svg class="icon" aria-hidden="true"><use href="#i-tag"></use></svg>
+                <span>Ventas</span>
+                <svg class="icon nav-external" aria-hidden="true"><use href="#i-arrow-up-right"></use></svg>
+            </a>
+            <a class="nav-item nav-item--external"
+               href="{% url 'admin:compras_compra_changelist' %}">
+                <svg class="icon" aria-hidden="true"><use href="#i-bag"></use></svg>
+                <span>Compras</span>
+                <svg class="icon nav-external" aria-hidden="true"><use href="#i-arrow-up-right"></use></svg>
+            </a>
+        </div>
+
+        <div class="nav-group">
+            <p class="nav-label">Sistema</p>
+            <a class="nav-item nav-item--external" href="{% url 'admin:index' %}">
+                <svg class="icon" aria-hidden="true"><use href="#i-sliders"></use></svg>
+                <span>Administración</span>
+                <svg class="icon nav-external" aria-hidden="true"><use href="#i-arrow-up-right"></use></svg>
+            </a>
+            <a class="nav-item" href="{% url 'agente:chat' %}#consultas">
+                <svg class="icon" aria-hidden="true"><use href="#i-help"></use></svg>
+                <span>Ayuda</span>
+            </a>
+        </div>
+    </nav>
+
+    <div class="sidebar-foot">
+        <div class="user-card">
+            <span class="avatar" aria-hidden="true">
+                {% if request.user.is_authenticated %}
+                    {{ request.user.get_full_name|default:request.user.username|slice:":2"|upper }}
+                {% else %}
+                    C1
+                {% endif %}
+            </span>
+            <span class="user-meta">
+                <span class="user-name">
+                    {% if request.user.is_authenticated %}
+                        {{ request.user.get_full_name|default:request.user.username }}
+                    {% else %}
+                        Caja 1
+                    {% endif %}
+                </span>
+                <span class="user-role">
+                    {% if request.user.is_authenticated %}
+                        {% if request.user.is_staff %}Administración{% else %}Sesión iniciada{% endif %}
+                    {% else %}
+                        Mostrador
+                    {% endif %}
+                </span>
+            </span>
+            {% if request.user.is_authenticated %}
+                <a class="icon-btn icon-btn--quiet" href="{% url 'admin:index' %}"
+                   aria-label="Abrir administración">
+                    <svg class="icon" aria-hidden="true"><use href="#i-sliders"></use></svg>
+                </a>
+            {% else %}
+                <a class="icon-btn icon-btn--quiet" href="{% url 'admin:login' %}"
+                   aria-label="Ingresar a administración">
+                    <svg class="icon" aria-hidden="true"><use href="#i-external"></use></svg>
+                </a>
+            {% endif %}
+        </div>
+    </div>
+</aside>

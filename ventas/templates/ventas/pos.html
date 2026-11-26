@@ -1,150 +1,409 @@
-{% load static %}
-<!doctype html>
-<html lang="es">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Punto de venta</title>
-    <script src="{% static 'ventas/js/pagos.js' %}" defer></script>
-</head>
-<body>
-    <main>
-        <h1>Punto de venta</h1>
+{% extends "base.html" %}
+{% load static formato %}
 
-        {% if error %}
-            <p role="alert">{{ error }}</p>
-        {% endif %}
+{% block title %}Caja · PosIA{% endblock %}
+{% block body_class %}page-pos{% endblock %}
 
+{% block head %}
+    <script src="{% static 'posia/js/pos.js' %}" defer></script>
+{% endblock %}
+
+{% block content %}
+<div class="pos">
+    <div class="pos-main">
+        <noscript>
+            <div class="noscript">
+                La caja necesita JavaScript para calcular el carrito y cobrar.
+                Activá JavaScript y recargá la página.
+            </div>
+        </noscript>
+
+        <section class="catalog" aria-labelledby="catalog-title">
+            <div class="catalog-head">
+                <h2 id="catalog-title" class="section-title">
+                    Catálogo
+                    <span class="count-pill" id="catalog-count"
+                          aria-live="polite">{{ total_productos }}</span>
+                    <span class="sr-only">productos</span>
+                </h2>
+            </div>
+
+            <div class="catalog-tools">
+                <div class="search-field">
+                    <svg class="icon search-icon" aria-hidden="true"><use href="#i-search"></use></svg>
+                    <label class="sr-only" for="busqueda">
+                        Buscar o escanear un producto
+                    </label>
+                    <input id="busqueda" name="busqueda" type="search"
+                           placeholder="Escaneá un código o buscá por nombre…"
+                           autocomplete="off" autocapitalize="off"
+                           spellcheck="false" enterkeyhint="search"
+                           autofocus>
+                    <button class="search-clear" type="button"
+                            id="search-clear" aria-label="Limpiar búsqueda"
+                            hidden>
+                        <svg class="icon" aria-hidden="true"><use href="#i-x"></use></svg>
+                    </button>
+                    <kbd class="search-key">F2</kbd>
+                </div>
+            </div>
+
+            <div class="category-tabs" role="group"
+                 aria-label="Filtrar por categoría">
+                <button type="button" class="cat-tab is-active"
+                        data-cat="todos" aria-pressed="true">
+                    Todos
+                    <span class="tab-count">{{ total_productos }}</span>
+                </button>
+                {% for categoria in categorias %}
+                    <button type="button" class="cat-tab"
+                            data-cat="{{ categoria.slug }}"
+                            aria-pressed="false">
+                        {{ categoria.nombre }}
+                        <span class="tab-count">{{ categoria.cuenta }}</span>
+                    </button>
+                {% endfor %}
+            </div>
+
+            <div class="product-grid" id="product-grid" style="--cols: 3">
+                {% for producto in catalogo %}
+                    <article class="product-card{% if producto.stock == 0 %} is-out{% endif %}"
+                             data-product-id="{{ producto.id }}"
+                             data-cat="{{ producto.categoria_slug }}"
+                             data-name="{{ producto.nombre }}"
+                             data-code="{{ producto.codigo }}"
+                             data-price="{{ producto.precio }}"
+                             data-stock="{{ producto.stock }}">
+                        <div class="product-media"
+                             data-cat="{{ producto.categoria_slug }}">
+                            <span class="product-cat">{{ producto.categoria }}</span>
+                            {% if producto.stock == 0 %}
+                                <span class="stock-chip stock-chip--out">
+                                    Sin stock
+                                </span>
+                            {% elif producto.stock <= producto.stock_minimo %}
+                                <span class="stock-chip stock-chip--low"
+                                      title="Stock disponible: {{ producto.stock }} unidades">
+                                    Quedan {{ producto.stock }}
+                                </span>
+                            {% else %}
+                                <span class="stock-chip"
+                                      title="Stock disponible: {{ producto.stock }} unidades">
+                                    {{ producto.stock }} u.
+                                </span>
+                            {% endif %}
+                            <svg class="product-icon" aria-hidden="true">
+                                <use href="#cat-{{ producto.categoria_slug }}"></use>
+                            </svg>
+                        </div>
+                        <div class="product-body">
+                            <h3 class="product-name" title="{{ producto.nombre }}">
+                                {{ producto.nombre }}
+                            </h3>
+                            <div class="product-price-row">
+                                <span class="product-price">{{ producto.precio|pesos }}</span>
+                            </div>
+                            {% if producto.stock == 0 %}
+                                <button class="add-btn" type="button"
+                                        data-add="{{ producto.id }}"
+                                        aria-label="Agregar {{ producto.nombre }} al carrito">
+                                    <svg class="icon icon--sm" aria-hidden="true"><use href="#i-plus"></use></svg>
+                                    Agregar
+                                </button>
+                            {% else %}
+                                <button class="add-btn" type="button"
+                                        data-add="{{ producto.id }}"
+                                        aria-label="Agregar {{ producto.nombre }} al carrito">
+                                    <svg class="icon icon--sm" aria-hidden="true"><use href="#i-plus"></use></svg>
+                                    Agregar
+                                </button>
+                            {% endif %}
+                            <div class="stepper" data-stepper="{{ producto.id }}"
+                                 hidden>
+                                <button class="step-btn" type="button"
+                                        data-step="-1"
+                                        data-id="{{ producto.id }}"
+                                        aria-label="Quitar una unidad de {{ producto.nombre }}">
+                                    <svg class="icon icon--xs" aria-hidden="true"><use href="#i-minus"></use></svg>
+                                </button>
+                                <span class="step-qty" data-qty="{{ producto.id }}"
+                                      aria-live="polite">0</span>
+                                <button class="step-btn" type="button"
+                                        data-step="1"
+                                        data-id="{{ producto.id }}"
+                                        aria-label="Agregar una unidad de {{ producto.nombre }}">
+                                    <svg class="icon icon--xs" aria-hidden="true"><use href="#i-plus"></use></svg>
+                                </button>
+                            </div>
+                        </div>
+                    </article>
+                {% endfor %}
+            </div>
+
+            <div class="catalog-empty" id="catalog-empty" hidden>
+                <svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg>
+                <p class="empty-title">No encontramos productos</p>
+                <p class="empty-copy">
+                    Probá con otro nombre o código, o cambiá de categoría.
+                </p>
+                <button class="btn btn--ghost btn--sm" type="button"
+                        id="clear-filters">
+                    Limpiar filtros
+                </button>
+            </div>
+        </section>
+    </div>
+
+    <aside class="cart-rail" id="carrito" tabindex="-1"
+           aria-label="Carrito y cobro">
         {% if venta %}
-            <p role="status">Venta N°{{ venta.pk }} registrada.</p>
+            <div class="sale-success" id="sale-success" role="status">
+                <div class="success-mark" aria-hidden="true">
+                    <svg class="icon" aria-hidden="true"><use href="#i-check"></use></svg>
+                </div>
+                <span class="status-chip status-chip--ok">Cobrada</span>
+                <h2 class="success-title">Venta N°{{ venta.pk }}</h2>
+                <p class="success-total">{{ venta.monto_total|pesos }}</p>
+                <p class="success-copy">
+                    {{ venta_unidades }}
+                    artículo{{ venta_unidades|pluralize:"s" }} ·
+                    el stock ya está descontado.
+                </p>
+                {% if venta_lineas %}
+                    <ul class="success-lines"
+                        aria-label="Productos de la venta">
+                        {% for linea in venta_lineas %}
+                            <li>
+                                <span class="success-line-qty">{{ linea.cantidad }}×</span>
+                                <span class="success-line-name" title="{{ linea.nombre }}">
+                                    {{ linea.nombre }}
+                                </span>
+                                <span class="success-line-total">{{ linea.subtotal|pesos }}</span>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
+                <dl class="success-payments">
+                    {% for pago in venta_pagos %}
+                        <div>
+                            <dt>{{ pago.get_medio_pago_display }}</dt>
+                            <dd>{{ pago.importe|pesos }}</dd>
+                        </div>
+                    {% endfor %}
+                </dl>
+                <div class="success-actions">
+                    <button class="btn btn--green" type="button"
+                            id="new-sale">
+                        Nueva venta
+                        <svg class="icon icon--sm" aria-hidden="true"><use href="#i-arrow-right"></use></svg>
+                    </button>
+                    <a class="text-link"
+                       href="{% url 'admin:ventas_venta_change' venta.pk %}">
+                        Ver en administración
+                        <svg class="icon icon--xs" aria-hidden="true"><use href="#i-external"></use></svg>
+                    </a>
+                </div>
+                <p class="success-foot">
+                    Escaneá el próximo producto para empezar otra venta.
+                </p>
+            </div>
         {% endif %}
 
-        <form method="post" action="{% url 'agregar_al_carrito' %}">
-            {% csrf_token %}
-            <label for="codigo_barras">Código de barras</label>
-            <input id="codigo_barras" type="text" name="codigo_barras"
-                   autofocus autocomplete="off">
+        <div class="cart-live" id="cart-live" {% if venta %}hidden{% endif %}>
+            <div class="cart-head">
+                <div class="cart-heading">
+                    <svg class="icon" aria-hidden="true"><use href="#i-cart"></use></svg>
+                    <h2 class="cart-title">Carrito</h2>
+                    <span class="count-badge" id="cart-count"
+                          aria-live="polite">{{ total_unidades }}</span>
+                </div>
+                <button class="text-btn text-btn--danger"
+                        type="button" id="cart-clear"
+                        {% if not lineas %}disabled{% endif %}>
+                    Vaciar
+                </button>
+            </div>
 
-            <input type="hidden" name="items" value="{{ items }}">
+            {% if error %}
+                <div class="alert alert--error" role="alert">
+                    <svg class="icon" aria-hidden="true"><use href="#i-alert"></use></svg>
+                    <p>{{ error }}</p>
+                </div>
+            {% endif %}
 
-            <button type="submit">Agregar</button>
-        </form>
-
-        <form method="post" action="{% url 'buscar_productos' %}">
-            {% csrf_token %}
-            <label for="nombre">Buscar por nombre</label>
-            <input id="nombre" type="text" name="nombre" autocomplete="off">
-
-            <input type="hidden" name="items" value="{{ items }}">
-
-            <button type="submit">Buscar</button>
-        </form>
-
-        {% if resultados %}
-            <section aria-labelledby="resultados-titulo">
-                <h2 id="resultados-titulo">Resultados</h2>
-
-                <ul>
-                    {% for producto in resultados %}
-                        <li>
-                            {{ producto.nombre }} — $ {{ producto.precio_venta }}
-
-                            <form method="post"
-                                  action="{% url 'agregar_desde_resultados' %}">
-                                {% csrf_token %}
-                                <input type="hidden" name="producto_id"
-                                       value="{{ producto.pk }}">
-                                <input type="hidden" name="items"
-                                       value="{{ items }}">
-                                <input type="hidden" name="nombre"
-                                       value="{{ nombre }}">
-
-                                <button type="submit">Agregar</button>
-                            </form>
+            <div class="cart-scroll">
+                <ul class="cart-items" id="cart-items">
+                    {% for linea in lineas %}
+                        <li class="cart-line"
+                            data-producto-id="{{ linea.producto.pk }}"
+                            data-cantidad="{{ linea.cantidad }}">
+                            <div class="cart-thumb"
+                                 data-cat="{{ linea.categoria_slug }}">
+                                <svg class="icon" aria-hidden="true">
+                                    <use href="#cat-{{ linea.categoria_slug }}"></use>
+                                </svg>
+                            </div>
+                            <div class="cart-line-body">
+                                <div class="cart-line-top">
+                                    <p class="cart-line-name">
+                                        {{ linea.producto.nombre }}
+                                    </p>
+                                    <button class="icon-btn cart-remove"
+                                            type="button"
+                                            data-remove="{{ linea.producto.pk }}"
+                                            aria-label="Quitar {{ linea.producto.nombre }} del carrito">
+                                        <svg class="icon icon--sm" aria-hidden="true"><use href="#i-trash"></use></svg>
+                                    </button>
+                                </div>
+                                <p class="cart-line-unit">
+                                    {{ linea.precio_unitario|pesos }} c/u
+                                </p>
+                                <div class="cart-line-foot">
+                                    <div class="stepper stepper--sm">
+                                        <button class="step-btn" type="button"
+                                                data-step="-1"
+                                                data-id="{{ linea.producto.id }}"
+                                                aria-label="Quitar una unidad de {{ linea.producto.nombre }}">
+                                            <svg class="icon icon--xs" aria-hidden="true"><use href="#i-minus"></use></svg>
+                                        </button>
+                                        <span class="step-qty"
+                                              data-qty="{{ linea.producto.id }}">{{ linea.cantidad }}</span>
+                                        <button class="step-btn" type="button"
+                                                data-step="1"
+                                                data-id="{{ linea.producto.id }}"
+                                                aria-label="Agregar una unidad de {{ linea.producto.nombre }}">
+                                            <svg class="icon icon--xs" aria-hidden="true"><use href="#i-plus"></use></svg>
+                                        </button>
+                                    </div>
+                                    <span class="cart-line-total">{{ linea.subtotal|pesos }}</span>
+                                </div>
+                            </div>
                         </li>
                     {% endfor %}
                 </ul>
-            </section>
-        {% endif %}
 
-        {% if sin_resultados %}
-            <p role="alert">No se encontraron productos.</p>
-        {% endif %}
+                <div class="cart-empty" id="cart-empty"
+                     {% if lineas %}hidden{% endif %}>
+                    <svg class="empty-art" viewBox="0 0 96 96"
+                         fill="none" stroke="currentColor"
+                         stroke-width="1.6" stroke-linecap="round"
+                         stroke-linejoin="round" aria-hidden="true">
+                        <path d="M26 10h44v76l-7-5-7 5-8-5-8 5-7-5-7 5V10z"/>
+                        <path d="M36 30h24M36 42h24M36 54h14"/>
+                        <path d="M36 70v8M41 70v8M46 70v8M53 70v8M58 70v8"
+                              stroke-width="2"/>
+                    </svg>
+                    <p class="empty-title">Carrito vacío</p>
+                    <p class="empty-copy">
+                        Escaneá un código o elegí un producto del catálogo para
+                        empezar la venta.
+                    </p>
+                    <p class="empty-hint">
+                        <kbd>F2</kbd> buscar
+                        <span>·</span>
+                        <kbd>F4</kbd> cobrar
+                    </p>
+                </div>
+            </div>
 
-        <section aria-labelledby="carrito-titulo">
-            <h2 id="carrito-titulo">Carrito</h2>
+            <div class="cart-checkout">
+                <div class="cart-total-row">
+                    <strong class="cart-total" id="cart-total"
+                              aria-live="polite">{{ total|pesos }}</strong>
+                </div>
 
-            {% if lineas %}
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Producto</th>
-                            <th>Cantidad</th>
-                            <th>Precio unitario</th>
-                            <th>Importe</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for linea in lineas %}
-                            <tr data-producto-id="{{ linea.producto.pk }}"
-                                data-cantidad="{{ linea.cantidad }}">
-                                <td>{{ linea.producto.nombre }}</td>
-                                <td>
-                                    <form method="post"
-                                          action="{% url 'actualizar_cantidad' %}">
-                                        {% csrf_token %}
-                                        <input type="hidden" name="items"
-                                               value="{{ items }}">
-                                        <input type="hidden" name="producto_id"
-                                               value="{{ linea.producto.pk }}">
-
-                                        <label for="cantidad-{{ linea.producto.pk }}">Cantidad</label>
-                                        <input id="cantidad-{{ linea.producto.pk }}"
-                                               type="number" name="cantidad"
-                                               value="{{ linea.cantidad }}">
-
-                                        <button type="submit">Actualizar</button>
-                                        <button type="submit"
-                                                formaction="{% url 'quitar_del_carrito' %}">Quitar</button>
-                                    </form>
-                                </td>
-                                <td>$ {{ linea.producto.precio_venta }}</td>
-                                <td>$ {{ linea.subtotal }}</td>
-                            </tr>
+                <div class="payment-block">
+                    <div class="payment-methods" role="group"
+                         aria-label="Medio de pago">
+                        {% for valor, etiqueta in medios_pago %}
+                            <div class="pay-method-row">
+                                <button class="pay-method" type="button"
+                                        data-method="{{ valor }}"
+                                        aria-pressed="false">
+                                    <svg class="icon pm-icon" aria-hidden="true">
+                                        {% if valor == "EFECTIVO" %}
+                                            <use href="#i-cash"></use>
+                                        {% elif valor == "TARJETA" %}
+                                            <use href="#i-card"></use>
+                                        {% elif valor == "QR" %}
+                                            <use href="#i-qr"></use>
+                                        {% else %}
+                                            <use href="#i-transfer"></use>
+                                        {% endif %}
+                                    </svg>
+                                    <span class="pm-label">{{ etiqueta }}</span>
+                                    <span class="pm-check" aria-hidden="true">
+                                        <svg class="icon icon--xs"><use href="#i-check"></use></svg>
+                                    </span>
+                                </button>
+                            </div>
                         {% endfor %}
-                    </tbody>
-                </table>
-
-                <p>Total: $ {{ total }}</p>
-            {% else %}
-                <p>Carrito vacío</p>
-            {% endif %}
-        </section>
-
-        <form method="post" action="{% url 'registrar_venta' %}"
-              id="form-pago" data-total="{{ total }}">
-            {% csrf_token %}
-            <input type="hidden" name="items" value="{{ items }}">
-
-            <fieldset>
-                <legend>Medios de pago</legend>
-
-                {% for valor, etiqueta in medios_pago %}
-                    <div data-medio-pago="{{ valor }}">
-                        <input id="medio-{{ valor }}" type="checkbox"
-                               name="medio_pago" value="{{ valor }}">
-                        <label for="medio-{{ valor }}">{{ etiqueta }}</label>
-
-                        <label for="importe-{{ valor }}">Importe</label>
-                        <input id="importe-{{ valor }}" type="number"
-                               name="importe_{{ valor }}" step="0.01" min="0"
-                               inputmode="decimal" hidden>
                     </div>
-                {% endfor %}
-            </fieldset>
 
-            <button type="submit">Registrar venta</button>
-        </form>
-    </main>
-</body>
-</html>
+                    <p class="payment-note" id="payment-note" role="status">
+                        Elegí uno o más medios de pago.
+                    </p>
+                </div>
+
+                <form method="post" action="{% url 'registrar_venta' %}"
+                      id="form-pago">
+                    {% csrf_token %}
+                    <input type="hidden" name="items" id="items-input"
+                           value="{{ items }}">
+                    <div id="payment-inputs"></div>
+                    <button class="pay-btn" type="submit" id="pay-btn" disabled>
+                        <span>Cobrar</span>
+                        <svg class="icon icon--sm" aria-hidden="true"><use href="#i-arrow-right"></use></svg>
+                    </button>
+                </form>
+
+            </div>
+        </div>
+    </aside>
+</div>
+
+<a class="mobile-cart-bar" id="mobile-cart-bar" href="#carrito" hidden>
+    <svg class="icon" aria-hidden="true"><use href="#i-cart"></use></svg>
+    <span class="mobile-cart-count" id="mobile-cart-count">0</span>
+    <span class="mobile-cart-total" id="mobile-cart-total">$ 0</span>
+    <span class="mobile-cart-action">
+        Ver carrito
+        <svg class="icon icon--xs" aria-hidden="true"><use href="#i-arrow-right"></use></svg>
+    </span>
+</a>
+{% endblock %}
+
+{% block scripts %}
+<template id="cart-line-template">
+    <li class="cart-line">
+        <div class="cart-thumb" data-cat="otros">
+            <svg class="icon" aria-hidden="true"><use href="#cat-otros"></use></svg>
+        </div>
+        <div class="cart-line-body">
+            <div class="cart-line-top">
+                <p class="cart-line-name"></p>
+                <button class="icon-btn cart-remove" type="button">
+                    <svg class="icon icon--sm" aria-hidden="true"><use href="#i-trash"></use></svg>
+                </button>
+            </div>
+            <p class="cart-line-unit"></p>
+            <div class="cart-line-foot">
+                <div class="stepper stepper--sm">
+                    <button class="step-btn" type="button" data-step="-1">
+                        <svg class="icon icon--xs" aria-hidden="true"><use href="#i-minus"></use></svg>
+                    </button>
+                    <span class="step-qty"></span>
+                    <button class="step-btn" type="button" data-step="1">
+                        <svg class="icon icon--xs" aria-hidden="true"><use href="#i-plus"></use></svg>
+                    </button>
+                </div>
+                <span class="cart-line-total"></span>
+            </div>
+        </div>
+    </li>
+</template>
+
+{{ catalogo|json_script:"pos-catalogo" }}
+{{ initial_items|json_script:"pos-initial-items" }}
+{% if venta %}{{ venta.pk|json_script:"pos-sale-id" }}{% endif %}
+{% endblock %}

@@ -1,43 +1,117 @@
+{% extends "base.html" %}
 {% load static %}
-<!doctype html>
-<html lang="es">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Chat</title>
+
+{% block title %}Chat · PosIA{% endblock %}
+{% block body_class %}page-chat{% endblock %}
+
+{% block head %}
     <script src="{% static 'chat/js/chat.js' %}" defer></script>
-</head>
-<body>
-    <main>
-        <h1>Chat</h1>
+{% endblock %}
 
-        {% if error %}
-            <p role="alert">{{ error }}</p>
-        {% endif %}
-
+{% block content %}
+<div class="page page--chat">
+    <header class="page-head">
+        <div>
+            <h1 class="page-title">Chat</h1>
+            <p class="page-sub">
+                Conversación con el asistente comercial. Conserva los últimos
+                3 intercambios y responde solo con datos del POS.
+            </p>
+        </div>
         {% if hilo %}
-            <section aria-labelledby="hilo-titulo">
-                <h2 id="hilo-titulo">Conversación</h2>
-                <ol>
-                    {% for intercambio in hilo %}
-                        <li>
-                            <p><strong>Vos:</strong> {{ intercambio.pregunta }}</p>
-                            <p><strong>IA:</strong> {{ intercambio.respuesta }}</p>
-                        </li>
-                    {% endfor %}
-                </ol>
-            </section>
+            <div class="page-actions">
+                <form method="post" action="{% url 'chat' %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="accion" value="nueva">
+                    <button class="btn btn--ghost btn--sm" type="submit">
+                        <svg class="icon icon--sm" aria-hidden="true"><use href="#i-refresh"></use></svg>
+                        Nueva conversación
+                    </button>
+                </form>
+            </div>
         {% endif %}
+    </header>
 
-        <form method="post" action="{% url 'chat' %}">
-            {% csrf_token %}
-            <label for="consulta">Consulta</label>
-            <textarea id="consulta" name="consulta" rows="3" cols="60">{{ consulta }}</textarea>
+    <div class="chat-wrap">
+        <section class="chat-shell" aria-label="Conversación">
+            <div class="chat-shell-head">
+                <span class="chat-shell-title">Conversación</span>
+                <span class="chat-status">Datos del POS</span>
+            </div>
 
-            <p id="aviso-procesando" role="status" hidden>La IA está procesando la consulta…</p>
+            <div class="chat-thread" id="chat-thread">
+                {% if hilo %}
+                    {% for intercambio in hilo %}
+                        <article class="chat-turn">
+                            <p class="msg-user">
+                                <span class="sr-only">Vos: </span>{{ intercambio.pregunta|linebreaksbr }}
+                            </p>
+                            <div class="msg-ai">
+                                <span class="msg-avatar" aria-hidden="true">
+                                    <svg class="icon"><use href="#i-sparkles"></use></svg>
+                                </span>
+                                <div class="msg-body">
+                                    <div class="msg-text">
+                                        <span class="sr-only">IA: </span>{{ intercambio.respuesta|linebreaks }}
+                                    </div>
+                                </div>
+                            </div>
+                        </article>
+                    {% endfor %}
+                {% else %}
+                    <div class="chat-empty">
+                        <span class="chat-empty-mark" aria-hidden="true">
+                            <svg class="icon"><use href="#i-chat"></use></svg>
+                        </span>
+                        <h2>¿Qué querés consultar?</h2>
+                        <p>
+                            Preguntá por stock, ventas, productos más vendidos
+                            o rentabilidad. La respuesta sale de la base del
+                            POS.
+                        </p>
+                        <div class="chat-chips">
+                            <button class="chat-chip" type="button"
+                                    data-sugerencia="¿Qué productos tienen stock bajo?">
+                                ¿Qué productos tienen stock bajo?
+                            </button>
+                            <button class="chat-chip" type="button"
+                                    data-sugerencia="¿Cuáles fueron los productos más vendidos este mes?">
+                                Productos más vendidos este mes
+                            </button>
+                            <button class="chat-chip" type="button"
+                                    data-sugerencia="¿Cuánto vendí y cuánto cobré esta semana?">
+                                Ventas y cobros de la semana
+                            </button>
+                        </div>
+                    </div>
+                {% endif %}
+            </div>
 
-            <button type="submit">Enviar</button>
-        </form>
-    </main>
-</body>
-</html>
+            <div class="chat-composer">
+                {% if error %}
+                    <div class="notice notice--error" role="alert">
+                        <svg class="icon" aria-hidden="true"><use href="#i-alert"></use></svg>
+                        <p>{{ error }}</p>
+                    </div>
+                {% endif %}
+
+                <form method="post" action="{% url 'chat' %}" id="chat-form">
+                    {% csrf_token %}
+                    <label class="sr-only" for="consulta">Consulta</label>
+                    <div class="composer-row">
+                        <textarea id="consulta" name="consulta" rows="1"
+                                  class="chat-input" required
+                                  placeholder="Escribí tu consulta…">{{ consulta }}</textarea>
+                        <button type="submit">Enviar</button>
+                    </div>
+                    <p id="aviso-procesando" role="status" hidden>La IA está procesando la consulta…</p>
+                    <p class="chat-hint">
+                        <span class="chat-hint-keys">Enter envía · Shift+Enter salto de línea.</span>
+                        <span>Se conservan los últimos 3 intercambios.</span>
+                    </p>
+                </form>
+            </div>
+        </section>
+    </div>
+</div>
+{% endblock %}

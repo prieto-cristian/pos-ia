@@ -4,6 +4,20 @@ Aplicación Django para administrar productos, ventas y compras, y consultar inf
 
 ## Funcionalidades
 
+### Punto de venta
+
+La caja está en `/ventas/pos/` y la raíz `/` redirige ahí. Es una pantalla de mostrador pensada para escritorio con lector de códigos:
+
+- Buscar por nombre o escanear un código de barras. El lector puede escribir directo en el buscador y confirmar con Enter.
+- Agregar productos al carrito, ajustar cantidades y quitarlos sin recargar la página. El catálogo se filtra por categoría y por texto en el navegador.
+- Ver el stock disponible de cada producto y el aviso de stock bajo o sin stock.
+- Cobrar con efectivo, tarjeta, QR o transferencia. Se admite pago dividido entre varios medios; los importes deben sumar exactamente el total.
+- Confirmar la venta con el número, el total, los productos vendidos y el detalle de pagos. El stock se descuenta en el servidor y la venta queda registrada.
+- Atajos de teclado: `F2` enfoca el buscador, `F4` lleva al cobro y `Esc` limpia la búsqueda.
+- En pantallas compactas, una barra fija muestra la cantidad y el total del carrito y lleva a la sección de cobro.
+
+El carrito y los filtros se resuelven en el navegador; el registro de la venta y la validación de importes se hacen siempre en el servidor. Si el navegador recarga la página, el carrito se recupera de la sesión de la pestaña. No están modelados cliente, mesa, turno, propina, descuentos, promociones ni impuestos desglosados: la caja no inventa esos datos.
+
 ### Administración
 
 El catálogo, las ventas y las compras se gestionan desde Django Admin (`/admin/`).
@@ -106,7 +120,9 @@ python manage.py runserver
 
 Abrí estas direcciones en el navegador:
 
+- Caja: http://127.0.0.1:8000/ventas/pos/ (la raíz `/` redirige acá)
 - Asistente: http://127.0.0.1:8000/agente/
+- Chat: http://127.0.0.1:8000/chat/
 - Administración: http://127.0.0.1:8000/admin/
 
 La base de datos local se guarda en `db.sqlite3`.
