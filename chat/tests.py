@@ -45,6 +45,110 @@ class ChatViewTests(TestCase):
         self.assertContains(response, '<p id="aviso-procesando" role="status" hidden>')
         self.assertContains(response, '<button type="submit">Enviar</button>')
 
+    def test_una_respuesta_con_negritas_se_muestra_en_negrita_sin_los_asteriscos(
+        self,
+    ):
+        with patch("chat.views.consultar_ia") as consultar_ia:
+            consultar_ia.return_value = "Vendiste **$ 5500,00** en total."
+
+            response = self.client.post(
+                reverse("chat"),
+                {"consulta": "¿Cuánto vendí en total?"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "<strong>$ 5500,00</strong>")
+        self.assertNotContains(response, "**$ 5500,00**")
+
+    def test_los_bloques_separados_por_una_linea_en_blanco_se_muestran_como_parrafos(
+        self,
+    ):
+        with patch("chat.views.consultar_ia") as consultar_ia:
+            consultar_ia.return_value = (
+                "Vendiste $ 5500,00 en total.\n\n"
+                "Tu producto más vendido es Café molido."
+            )
+
+            response = self.client.post(
+                reverse("chat"),
+                {"consulta": "¿Cómo fue la semana?"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "<p>Vendiste $ 5500,00 en total.</p>")
+        self.assertContains(
+            response,
+            "<p>Tu producto más vendido es Café molido.</p>",
+        )
+
+    def test_los_saltos_de_linea_simples_se_conservan_dentro_del_parrafo(self):
+        with patch("chat.views.consultar_ia") as consultar_ia:
+            consultar_ia.return_value = (
+                "Vendiste $ 5500,00 en total.\n"
+                "Tu producto más vendido es Café molido."
+            )
+
+            response = self.client.post(
+                reverse("chat"),
+                {"consulta": "¿Cómo fue la semana?"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertInHTML(
+            "<p>Vendiste $ 5500,00 en total.<br>"
+            "Tu producto más vendido es Café molido.</p>",
+            response.content.decode(),
+        )
+
+    def test_las_etiquetas_html_se_muestran_como_texto_literal_sin_alterar_la_pagina(
+        self,
+    ):
+        with patch("chat.views.consultar_ia") as consultar_ia:
+            consultar_ia.return_value = "Antes <script>alert('x')</script> después."
+
+            response = self.client.post(
+                reverse("chat"),
+                {"consulta": "¿Cómo fue la semana?"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            "Antes &lt;script&gt;alert('x')&lt;/script&gt; después.",
+        )
+        self.assertNotContains(response, "<script>alert('x')</script>")
+
+    def test_todos_los_intercambios_del_hilo_se_muestran_con_el_mismo_formato_al_volver_a_chat(
+        self,
+    ):
+        session = self.client.session
+        session["hilo"] = [
+            {
+                "pregunta": "¿Cuánto vendí?",
+                "respuesta": (
+                    "Vendiste **$ 5500,00** en total.\n\nFue tu mejor semana."
+                ),
+            },
+            {
+                "pregunta": "¿Y el producto más vendido?",
+                "respuesta": "Fue **Café molido**.\n\nCon 10 unidades.",
+            },
+        ]
+        session.save()
+
+        response = self.client.get(reverse("chat"))
+
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        self.assertInHTML(
+            "<p>Vendiste <strong>$ 5500,00</strong> en total.</p>",
+            html,
+        )
+        self.assertInHTML("<p>Fue tu mejor semana.</p>", html)
+        self.assertInHTML("<p>Fue <strong>Café molido</strong>.</p>", html)
+        self.assertInHTML("<p>Con 10 unidades.</p>", html)
+        self.assertNotContains(response, "**")
+
     def test_chat_carga_el_script_que_maneja_el_aviso_de_procesamiento(self):
         response = self.client.get(reverse("chat"))
 
@@ -624,6 +728,27 @@ class ChatViewTests(TestCase):
                 "Consulta actual: ¿Y en enero?"
             ),
         )
+
+    def test_el_contexto_de_la_ia_conserva_la_respuesta_original_con_markdown(self):
+        with patch("chat.services.subprocess.run") as run:
+            run.side_effect = [
+                Mock(stdout="Vendiste **$ 5500,00** en total.\n"),
+                Mock(stdout="En enero vendiste $ 4200,00.\n"),
+            ]
+
+            self.client.post(
+                reverse("chat"),
+                {"consulta": "¿Cuánto vendí en total?"},
+            )
+            response = self.client.post(
+                reverse("chat"),
+                {"consulta": "¿Y en enero?"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        prompt = run.call_args.args[0][-1]
+        self.assertIn("IA: Vendiste **$ 5500,00** en total.", prompt)
+        self.assertNotIn("<strong>", prompt)
 
     def test_la_primera_consulta_se_envia_a_la_ia_sin_contexto_previo(self):
         with patch("chat.services.subprocess.run") as run:
