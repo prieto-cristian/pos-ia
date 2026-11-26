@@ -2470,6 +2470,7 @@ kbd {
 }
 
 .msg-body {
+    min-width: 0;
     padding: 9px 12px;
     border: 1px solid var(--line);
     border-radius: 4px 13px 13px 13px;
@@ -2479,15 +2480,162 @@ kbd {
     line-height: 1.6;
 }
 
+.msg-text > .sr-only + * {
+    margin-top: 0;
+}
+
+.msg-text > :last-child {
+    margin-bottom: 0;
+}
+
 .msg-body p + p {
     margin-top: 8px;
 }
 
+.msg-body h1,
+.msg-body h2,
+.msg-body h3,
+.msg-body h4,
+.msg-body h5,
+.msg-body h6 {
+    margin: 0 0 6px;
+    color: var(--ink);
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    line-height: 1.25;
+}
+
+.msg-body h1 {
+    margin-top: 16px;
+    font-size: 18px;
+    font-weight: 750;
+    letter-spacing: -0.02em;
+}
+
+.msg-body h2 {
+    margin-top: 14px;
+    font-size: 16px;
+}
+
+.msg-body h3 {
+    margin-top: 12px;
+    font-size: 14.5px;
+}
+
+.msg-body h4 {
+    margin-top: 10px;
+    font-size: 13px;
+}
+
+.msg-body h5 {
+    margin-top: 10px;
+    font-size: 12.5px;
+    font-weight: 650;
+}
+
+.msg-body h6 {
+    margin-top: 10px;
+    color: var(--ink-3);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
 .msg-body ul,
 .msg-body ol {
-    margin-top: 6px;
-    padding-left: 17px;
+    margin: 8px 0;
+    padding-left: 18px;
+}
+
+.msg-body ul {
     list-style: disc;
+}
+
+.msg-body ol {
+    list-style: decimal;
+}
+
+.msg-body ul ul {
+    list-style: circle;
+}
+
+.msg-body ul ul ul {
+    list-style: square;
+}
+
+.msg-body ol ol {
+    list-style: lower-alpha;
+}
+
+.msg-body ol ol ol {
+    list-style: lower-roman;
+}
+
+.msg-body li + li {
+    margin-top: 4px;
+}
+
+.msg-body li > ul,
+.msg-body li > ol {
+    margin: 4px 0 0;
+    padding-left: 16px;
+}
+
+.msg-body blockquote {
+    margin: 8px 0;
+    padding: 6px 10px;
+    border-left: 3px solid var(--line-strong);
+    border-radius: 0 8px 8px 0;
+    background: var(--surface-3);
+    color: var(--ink-2);
+}
+
+.msg-body blockquote > :first-child {
+    margin-top: 0;
+}
+
+.msg-body blockquote > :last-child {
+    margin-bottom: 0;
+}
+
+.msg-body .msg-table-scroll {
+    max-width: 100%;
+    margin: 8px 0;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+}
+
+.msg-body table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    line-height: 1.45;
+    font-variant-numeric: tabular-nums;
+}
+
+.msg-body th,
+.msg-body td {
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+    vertical-align: top;
+    white-space: nowrap;
+}
+
+.msg-body th {
+    border-bottom-color: var(--line-strong);
+    background: var(--surface-3);
+    color: var(--ink);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.msg-body tbody tr:last-child td {
+    border-bottom: 0;
 }
 
 .chat-empty {

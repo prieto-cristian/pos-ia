@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static chat_markdown %}
 
 {% block title %}Chat · PosIA{% endblock %}
 {% block body_class %}page-chat{% endblock %}
@@ -52,7 +52,7 @@
                                 </span>
                                 <div class="msg-body">
                                     <div class="msg-text">
-                                        <span class="sr-only">IA: </span>{{ intercambio.respuesta|linebreaks }}
+                                        <span class="sr-only">IA: </span>{{ intercambio.respuesta|markdown_a_html }}
                                     </div>
                                 </div>
                             </div>
