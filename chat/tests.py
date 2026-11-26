@@ -149,6 +149,81 @@ class ChatViewTests(TestCase):
         self.assertInHTML("<p>Con 10 unidades.</p>", html)
         self.assertNotContains(response, "**")
 
+    def test_una_respuesta_con_una_tabla_se_muestra_como_tabla_sin_las_barras_del_markdown(
+        self,
+    ):
+        with patch("chat.views.consultar_ia") as consultar_ia:
+            consultar_ia.return_value = (
+                "| Producto | Cantidad | Total |\n"
+                "| --- | --- | --- |\n"
+                "| Café molido | 10 | $ 12000,00 |\n"
+                "| Yerba | 3 | $ 4500,00 |"
+            )
+
+            response = self.client.post(
+                reverse("chat"),
+                {"consulta": "¿Qué productos vendí más?"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertInHTML(
+            "<table>"
+            "<thead>"
+            "<tr><th>Producto</th><th>Cantidad</th><th>Total</th></tr>"
+            "</thead>"
+            "<tbody>"
+            "<tr><td>Café molido</td><td>10</td><td>$ 12000,00</td></tr>"
+            "<tr><td>Yerba</td><td>3</td><td>$ 4500,00</td></tr>"
+            "</tbody>"
+            "</table>",
+            response.content.decode(),
+        )
+        self.assertNotContains(response, "| Producto |")
+        self.assertNotContains(response, "| --- |")
+
+    def test_una_tabla_respeta_la_alineacion_indicada_en_cada_columna(self):
+        with patch("chat.views.consultar_ia") as consultar_ia:
+            consultar_ia.return_value = (
+                "| Producto | Cantidad | Total |\n"
+                "| :--- | :---: | ---: |\n"
+                "| Café molido | 10 | $ 12000,00 |"
+            )
+
+            response = self.client.post(
+                reverse("chat"),
+                {"consulta": "¿Qué productos vendí más?"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        self.assertIn('<th style="text-align:left">Producto</th>', html)
+        self.assertIn('<th style="text-align:center">Cantidad</th>', html)
+        self.assertIn('<th style="text-align:right">Total</th>', html)
+        self.assertIn('<td style="text-align:left">Café molido</td>', html)
+        self.assertIn('<td style="text-align:center">10</td>', html)
+        self.assertIn('<td style="text-align:right">$ 12000,00</td>', html)
+
+    def test_una_tabla_ancha_se_contiene_en_un_area_con_desplazamiento_horizontal(
+        self,
+    ):
+        with patch("chat.views.consultar_ia") as consultar_ia:
+            consultar_ia.return_value = (
+                "| Producto | Categoría | Stock | Vendidos | Precio | Total |\n"
+                "| --- | --- | --- | --- | --- | --- |\n"
+                "| Café molido | Almacén | 12 | 10 | $ 1200,00 | $ 12000,00 |"
+            )
+
+            response = self.client.post(
+                reverse("chat"),
+                {"consulta": "¿Qué productos vendí más?"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertRegex(
+            response.content.decode(),
+            r'<div class="msg-table-scroll"[^>]*>\s*<table>',
+        )
+
     def test_chat_carga_el_script_que_maneja_el_aviso_de_procesamiento(self):
         response = self.client.get(reverse("chat"))
 
